@@ -16,6 +16,7 @@ interface ItemMetadata {
   purchasePrice: string;
   mintDate: string;
   originalCreator: string;
+  strength: string;
 }
 
 interface EthereumError {
@@ -26,6 +27,10 @@ interface EthereumError {
 function App() {
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
   const [userAddress, setUserAddress] = useState<string | null>(null);
+
+  //debug state
+  const [showDebug, setShowDebug] = useState(false);
+
   
   // Game State
   const [clickCount, setClickCount] = useState(0);
@@ -33,7 +38,7 @@ function App() {
   const [clickMultiplier, setClickMultiplier] = useState(1);
   const [passiveIncome, setPassiveIncome] = useState(0);
   const [tokenBalance, setTokenBalance] = useState("0");
-  const [inventory, setInventory] = useState<{id: string, uri: string}[]>([]);
+  const [inventory, setInventory] = useState<{id: string, uri: string, strength: number}[]>([]);
   const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'inventory'>('game');
   
   // Item Details State
@@ -63,28 +68,99 @@ function App() {
     setPassiveIncome(0);
   }, []);
 
-  //Fetch hooks to combat React array handling
+  const toggleDebug = () => {
+    const code = prompt("Enter Debug Code:");
+    if (code === import.meta.env.VITE_DEBUG_CODE) {
+      setShowDebug(true);
+      toast.success("Debug Mode Activated! 🛠️");
+    } else if (code) {
+      toast.error("Invalid Code");
+    }
+  };
+
+  const debugMintTokens = async () => {
+    if (!signer || !userAddress) return;
+    try {
+      const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer);
+      const amount = parseEther("100"); // 100 Tokens
+      const tx = await tokenContract.mint(userAddress, amount);
+      await tx.wait();
+      toast.success("Debug: Minted 100 Tokens");
+      fetchBalance();
+    } catch (e) {
+      console.error(e);
+      toast.error("Debug Mint Failed (Are you owner?)");
+    }
+  };
+
+  const debugResetClicks = () => {
+      setClickCount(0);
+      setUnclaimedClicks(100); // Give enough for 10 tokens
+      toast.info("Debug: Clicks Reset & Boosted");
+  };
+
+  const getItemStats = (uri: string, strengthVal: number) => {
+    const strengthDecimal = strengthVal / 100; // 0.01 to 0.50
+
+    switch (uri) {
+      case "ipfs://valid-uri-1": // Sword
+        return { multiplier: strengthDecimal, passive: 0 };
+      
+      case "ipfs://valid-uri-2": // Shield
+        return { multiplier: 0, passive: strengthDecimal * 10 };
+      
+      case "ipfs://valid-uri-3": // Scepter
+        return { multiplier: 50, passive: 20 };
+      
+      // PREPARING FOR PHASE 2:
+      // case "ipfs://valid-uri-4": return { ... }
+      
+      default:
+        return { multiplier: 0, passive: 0 };
+    }
+  };
+
   const fetchInventory = useCallback(async () => {
     if (signer && userAddress) {
        try {
         const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
-        // Find all "Transfer" events where the "to" address is the user
         const filter = gameItemContract.filters.Transfer(null, userAddress);
-        const events = await gameItemContract.queryFilter(filter);
+        const events = await gameItemContract.queryFilter(filter, 0);
         
         const loadedInventory = await Promise.all(events.map(async (event) => {
-            // @ts-expect-error Event log args are not strictly typed in ethers v6 wrapper
-            const tokenId = event.args[2]; // 3rd argument is tokenId
-            // Double check owner (in case they transferred it away)
-            const owner = await gameItemContract.ownerOf(tokenId);
-            if (owner.toLowerCase() === userAddress.toLowerCase()) {
-                 const uri = await gameItemContract.tokenURI(tokenId);
-                 return { id: tokenId.toString(), uri };
+          try {
+          // @ts-expect-error Ethers v6 args
+          const tokenId = event.args[2]; 
+          const owner = await gameItemContract.ownerOf(tokenId);
+          
+          if (owner.toLowerCase() === userAddress.toLowerCase()) {
+               const uri = await gameItemContract.tokenURI(tokenId);
+               // Fetch the metadata struct to get the specific strength of this item
+               const meta = await gameItemContract.items(tokenId);
+
+               const strengthVal = meta.strength ? Number(meta.strength) : 1;
+
+               return { 
+                 id: tokenId.toString(), 
+                 uri, 
+                 strength:strengthVal
+               };
+          }
+        } catch (err) {
+          // Token might have been burned or errored
+          console.warn("Item fetch error", err);
+       }
+       return null;
+      }));
+
+      const uniqueItemsMap = new Map();
+        loadedInventory.forEach(item => {
+            if (item) {
+                uniqueItemsMap.set(item.id, item);
             }
-            return null;
-        }));
+        });
         
-        setInventory(loadedInventory.filter(item => item !== null) as {id: string, uri: string}[]);
+        setInventory(Array.from(uniqueItemsMap.values()));
        } catch (e) {
            console.error("Error fetching inventory:", e);
        }
@@ -104,6 +180,7 @@ function App() {
     }
   }, [signer, userAddress, fetchInventory]);
 
+  // Fetch balance on initial load and whenever userAddress or clickCount changes (to reflect new earnings)
   useEffect(() => {
     if (userAddress) {
       fetchBalance();
@@ -130,22 +207,19 @@ function App() {
 
   // Calculate Game Bonuses based on Inventory
   useEffect(() => {
-      let newMultiplier = 1;
-      let newPassive = 0;
+    let newMultiplier = 1;
+    let newPassive = 0;
 
-      // Check for specific items by their URI (as defined in SHOP_ITEMS)
-      const hasSword = inventory.some(item => item.uri === "ipfs://valid-uri-1"); // Sword of Clicking
-      const hasShield = inventory.some(item => item.uri === "ipfs://valid-uri-2"); // Shield of Holding
-      const hasCrown = inventory.some(item => item.uri === "ipfs://valid-uri-3"); // Crown
+    inventory.forEach(item => {
+        const stats = getItemStats(item.uri, item.strength);
+        newMultiplier += stats.multiplier;
+        newPassive += stats.passive;
+    });
 
-      if (hasSword) newMultiplier += 1;
-      if (hasCrown) newMultiplier += 100;
-
-      if (hasShield) newPassive += 1; // 1 click per second
-
-      setClickMultiplier(newMultiplier);
-      setPassiveIncome(newPassive);
+    setClickMultiplier(parseFloat(newMultiplier.toFixed(2)));
+    setPassiveIncome(parseFloat(newPassive.toFixed(2)));
   }, [inventory]);
+
 
   // Passive Income Timer
   useEffect(() => {
@@ -240,6 +314,7 @@ function App() {
       const item = SHOP_ITEMS.find(i => i.uri === itemUri);
       if (!item) return;
 
+      //todo: doesn't show up, fix
       const currentBalance = parseFloat(tokenBalance);
       if (currentBalance < item.price) {
         toast.error(`Insufficient funds! You have ${tokenBalance} CLK but need ${item.price} CLK.`);
@@ -248,15 +323,33 @@ function App() {
 
       
       try {
-        const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
-        
         setPurchasingItemUri(itemUri);
+        const priceWei = parseEther(item.price.toString());
 
-        const txPromise = async () => {
-           const tx = await gameItemContract.mintItem(userAddress, itemUri);
-             console.log("Mint transaction:", tx.hash);
-             return await tx.wait();
-          }
+        const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer);
+
+        const allowance = await tokenContract.allowance(userAddress, GAME_ITEM_ADDRESS);
+
+
+
+        if (allowance < priceWei) {
+          toast.info("Please approve the transaction first...");
+          // 2. Approve the Shop to spend tokens
+          const txApprove = await tokenContract.approve(GAME_ITEM_ADDRESS, priceWei);
+          await toast.promise(
+              txApprove.wait(),
+              { pending: "Approving usage of CLK...", success: "Approved!", error: "Approval failed" }
+          );
+      }
+
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+
+      const txPromise = async () => {
+        // Pass priceWei to the new contract function
+        const tx = await gameItemContract.mintItem(userAddress, itemUri, priceWei);
+          console.log("Mint transaction:", tx.hash);
+          return await tx.wait();
+       }
 
           await toast.promise(
             txPromise(),
@@ -267,18 +360,21 @@ function App() {
             }
           );
 
-          fetchInventory();
+        setTokenBalance((prev) => (parseFloat(prev) - item.price).toString()); 
+        fetchInventory();
+        fetchBalance();
       } catch (e: unknown) {
-          console.error("Mint failed:", e);
-          let msg = "Failed to buy item.";
-          if (typeof e === 'object' && e !== null) {
-              const err = e as EthereumError;
-              if (err.reason) msg += ` Reason: ${err.reason}`;
-          }
-          toast.error(msg);
-      } finally {
-          setPurchasingItemUri(null);
-      }
+        console.error("Mint failed:", e);
+        let msg = "Failed to buy item.";
+        if (typeof e === 'object' && e !== null) {
+            const err = e as EthereumError;
+            if (err.reason) msg += ` Reason: ${err.reason}`;
+            else if (err.message) msg += ` Error: ${err.message}`;
+        }
+        toast.error(msg);
+    } finally {
+        setPurchasingItemUri(null);
+    }
   }
 
   const addToWallet = async () => {
@@ -309,15 +405,22 @@ function App() {
     try {
         const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
         
-        // Try fetching history, default to empty array if fails (backward compatibility)
-        let history = [];
+        let history: ItemHistoryRecord[] = [];
         try {
-            history = await gameItemContract.getItemHistory(tokenId);
+            const rawHistory = await gameItemContract.getItemHistory(tokenId);
+            
+            // Map the Ethers Result/Struct array to clean JS objects
+            // Ethers v6 returns Proxy objects for structs, so we explicitely read properties
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            history = rawHistory.map((record: any) => ({
+                from: record.from,
+                to: record.to
+            }));
         } catch(e) { console.warn("Could not fetch history", e); }
         setSelectedItemHistory(history);
 
-        // Try fetching metadata
-        let meta = { purchasePrice: 0, mintDate: 0, originalCreator: "Unknown" };
+        //fetching metadata
+        let meta = { purchasePrice: 0, mintDate: 0, originalCreator: "Unknown", strength: 0 };
         try {
            meta = await gameItemContract.items(tokenId);
         } catch(e) { console.warn("Could not fetch metadata", e); }
@@ -325,7 +428,8 @@ function App() {
         setSelectedItemMetadata({
             purchasePrice: meta.purchasePrice.toString(),
             mintDate: Number(meta.mintDate) > 0 ? new Date(Number(meta.mintDate) * 1000).toLocaleString() : "Unknown",
-            originalCreator: meta.originalCreator
+            originalCreator: meta.originalCreator,
+            strength: (Number(meta.strength) / 100).toFixed(2) // Display readable format
         });
         
         setSelectedTokenId(tokenId);
@@ -379,6 +483,8 @@ function App() {
     <div className="app-container">
       <ToastContainer position="bottom-right" theme="dark" />
       <h1>Crypto Clicker</h1>
+
+      <h1 onClick={toggleDebug} style={{cursor: 'pointer'}} title="Click for Admin">Crypto Clicker</h1>
       
       <div className="wallet-section">
         <WalletConnect onConnect={handleConnect} onDisconnect={handleDisconnect} />
@@ -416,16 +522,16 @@ function App() {
         {currentScreen === 'game' && (
           <div className="card">
             <button onClick={handleClick} style={{ fontSize: '2em', padding: '20px' }}>
-              🖱️ Click Me!
+              Click Me!
             </button>
             <p>
-              Clicks (Session): {clickCount}
+              Clicks (Session): {parseFloat(clickCount.toFixed(3))}
             </p>
             <p>
               Multipler: x{clickMultiplier} {passiveIncome > 0 && `| Passive: +${passiveIncome}/sec`}
             </p>
             <p>
-              Unclaimed Clicks: {unclaimedClicks} / {CLICKS_PER_TOKEN} for next coin
+              Unclaimed Clicks: {parseFloat(unclaimedClicks.toFixed(3))} / {CLICKS_PER_TOKEN} for next coin
             </p>
             <button 
               onClick={handlePayout} 
@@ -436,6 +542,21 @@ function App() {
             </button>
           </div>
         )}
+
+      {showDebug && (
+        <div style={{
+          position: 'fixed', bottom: '10px', left: '10px', 
+          background: 'rgba(50,0,0,0.9)', padding: '15px', 
+          border: '1px solid red', borderRadius: '8px', zIndex: 2000
+        }}>
+          <h3 style={{margin: '0 0 10px 0', color: 'red'}}>🛠️ Debug Menu</h3>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
+             <button onClick={debugMintTokens}>Give 100 Tokens (Owner Only)</button>
+             <button onClick={debugResetClicks}>Set 100 Free Clicks</button>
+             <button onClick={() => setShowDebug(false)}>Close Menu</button>
+          </div>
+        </div>
+      )}
 
         {currentScreen === 'shop' && (
           <div className="shop-section" style={{ marginTop: '2rem', borderTop: '1px solid #444', paddingTop: '1rem' }}>
@@ -537,17 +658,37 @@ function App() {
                   <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
                       {inventory.map((item) => {
                           const itemDetails = SHOP_ITEMS.find(s => s.uri === item.uri);
+                          
+                          // Calculate color based on rarity/strength
+                          // 1-20: Gray (Common), 21-40: Blue (Rare), 41-50: Gold (Legendary)
+                          let borderColor = '#444';
+                          if (item.strength > 40) borderColor = 'gold';
+                          else if (item.strength > 20) borderColor = '#4facfe';
+
                           return (
                             <div key={item.id} className="card" 
-                                style={{ width: '160px', cursor: 'pointer', border: '1px solid #444', transition: 'all 0.2s', padding: '15px' }} 
+                                style={{ 
+                                  width: '160px', 
+                                  cursor: 'pointer', 
+                                  border: `2px solid ${borderColor}`, // Show rarity border
+                                  transition: 'all 0.2s', 
+                                  padding: '15px',
+                                  position: 'relative'
+                                }} 
                                 onClick={() => fetchItemDetails(item.id)}
-                                onMouseOver={(e) => e.currentTarget.style.borderColor = '#646cff'}
-                                onMouseOut={(e) => e.currentTarget.style.borderColor = '#444'}
                             >
-                                <div style={{fontSize: '2em', marginBottom: '10px'}}>⚔️</div>
+                                {/* Show Strength Badge */}
+                                <div style={{
+                                  position: 'absolute', top: '5px', right: '5px', 
+                                  fontSize: '0.7em', background: '#333', padding: '2px 5px', borderRadius: '4px',
+                                  color: borderColor
+                                }}>
+                                  Quality: {item.strength}/50
+                                </div>
+
+                                <div style={{fontSize: '2em', marginBottom: '10px', marginTop: '10px'}}>⚔️</div>
                                 <p style={{margin: '5px 0'}}><strong>{itemDetails?.name || `Item #${item.id}`}</strong></p>
-                                {itemDetails && <p style={{fontSize: '0.8em', color: '#aaa'}}>{itemDetails.description}</p>}
-                                <p style={{fontSize: '0.7em', color: '#666'}}>ID: {item.id}</p>
+
                                 <button style={{marginTop: '10px', width: '100%', fontSize: '0.8em'}}>View Details</button>
                             </div>
                           );

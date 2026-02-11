@@ -4,7 +4,7 @@ export default buildModule("ClickerGameModule", (m) => {
 
   const clickerToken = m.contract("ClickerToken");
 
-  const gameItem = m.contract("GameItem");
+  const gameItem = m.contract("GameItem", [clickerToken]);
 
   return { clickerToken, gameItem };
 });

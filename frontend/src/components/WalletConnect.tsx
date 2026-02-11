@@ -14,6 +14,15 @@ export const WalletConnect = ({ onConnect, onDisconnect }: WalletConnectProps) =
         if (window.ethereum) {
             try {
                 const provider = new BrowserProvider(window.ethereum);
+
+                //making sure users are using testnet
+                const network = await provider.getNetwork();
+
+                // 11155111 is Sepolia, 31337 is Hardhat Local
+                if (network.chainId !== 11155111n && network.chainId !== 31337n) {
+                    toast.warning("Wrong Network! Please switch to Sepolia Testnet.");
+                }
+
                 const signer = await provider.getSigner();
                 const address = await signer.getAddress();
                 setAccount(address);

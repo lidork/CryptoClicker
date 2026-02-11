@@ -8,13 +8,13 @@ export const ClickerTokenABI = [
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
   "function transferFrom(address from, address to, uint256 amount) returns (bool)",
+  
   "function mint(address to, uint256 amount) public",
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "event Approval(address indexed owner, address indexed spender, uint256 value)"
 ];
 
 export const GameItemABI = [
-  // ERC721 Standard
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function balanceOf(address owner) view returns (uint256)",
@@ -28,8 +28,11 @@ export const GameItemABI = [
   "function safeTransferFrom(address from, address to, uint256 tokenId)",
   "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)",
   
-  // Custom Function (from your GameItem.sol)
-  "function mintItem(address player, string tokenURI) public returns (uint256)",
+  // Custom Functions from GameItem.sol
+  "function mintItem(address player, string tokenURI, uint256 price) public returns (uint256)",
+  "function items(uint256 tokenId) view returns (uint256 purchasePrice, uint256 mintDate, address originalCreator, uint256 strength)",
+  "function getItemHistory(uint256 tokenId) view returns (tuple(address from, address to, uint256 timestamp)[])",
+
   
   // Events
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",

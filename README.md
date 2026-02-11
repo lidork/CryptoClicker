@@ -38,11 +38,12 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 ## 4. TODO
 
 ### Phase 1: Easy Improvements (UI/UX)
-- [ ] **Error Notifications**: Replace browser `alert()` calls with a toast notification library (e.g., `react-toastify`) for better user experience.
+- [x] **Error Notifications**: Replace browser `alert()` calls with a toast notification library (e.g., `react-toastify`) for better user experience.
 
 ### Phase 2: Game Logic Enhancements
 - [ ] **Dynamic Pricing**: Implement logic where item prices increase after every purchase (bonding curve) or based on supply.
 - [ ] **Leaderboard**: Create a simple leaderboard showing addresses with the most `CLK` tokens (requires indexing events).
+- [ ] **Expand Shop Inventory**: Increase item variety to at least 6 items (e.g., Potions, Pickaxes) with unique bonus mechanics implemented in the frontend.
 
 ### Phase 3: ERC-8004 "Lite" Implementation (Identity & Validation)
 - [ ] **Smart Contract - Agent Identity**: Refactor `GameItem.sol` to store "Agent Stats" (Level, Mining Rate, Creation Time) in a struct mapping, acting as a basic **Identity Registry**.
