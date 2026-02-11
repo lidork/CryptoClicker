@@ -24,8 +24,12 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         uint256 timestamp;
     }
 
+    mapping(string => uint256) public uriSupply;
     mapping(uint256 => ItemMetadata) public items;
     mapping(uint256 => TransferRecord[]) private _itemHistory;
+
+    uint256 public constant PRICE_INCREMENT = 1 * 10**18;
+
 
     constructor(address _paymentTokenAddress) ERC721("ClickerItem", "ITM") Ownable(msg.sender) {
 
@@ -33,15 +37,26 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         _setDefaultRoyalty(msg.sender, 1000); // 10% royalty
     }
 
-    function mintItem(address player, string memory tokenURI, uint256 price)
+
+    function getDynamicPrice(string memory tokenURI, uint256 basePrice) public view returns (uint256) {
+        uint256 supply = uriSupply[tokenURI];
+        return basePrice + (supply * PRICE_INCREMENT); 
+    }
+
+    function mintItem(address player, string memory tokenURI, uint256 basePrice)
         public
         returns (uint256)
     {
-        require(paymentToken.transferFrom(msg.sender, address(this), price), "Payment failed");
-
         uint256 tokenId = _nextTokenId++;
         _mint(player, tokenId);
         _setTokenURI(tokenId, tokenURI);
+
+
+        uint256 currentPrice = getDynamicPrice(tokenURI, basePrice);
+
+        require(paymentToken.transferFrom(msg.sender, address(this), currentPrice), "Payment failed");
+
+        uriSupply[tokenURI]++;
 
 
         //generate random strength between 1 and 50 using block timestamp, sender, and tokenId for some variability
@@ -50,7 +65,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
 
 
         items[tokenId] = ItemMetadata({
-            purchasePrice: price,
+            purchasePrice: currentPrice, 
             mintDate: block.timestamp,
             originalCreator: msg.sender,
             strength: randomStrength

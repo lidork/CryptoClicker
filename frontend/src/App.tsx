@@ -48,6 +48,8 @@ function App() {
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [isPayoutProcessing, setIsPayoutProcessing] = useState(false);
   const [purchasingItemUri, setPurchasingItemUri] = useState<string | null>(null);
+  const [dynamicPrices, setDynamicPrices] = useState<Record<string, string>>({});
+
 
   const handleConnect = useCallback((_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
     setSigner(newSigner);
@@ -120,6 +122,25 @@ function App() {
     }
   };
 
+  const fetchShopPrices = useCallback(async () => {
+    if (!signer) return;
+    try {
+        const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+        const prices: Record<string, string> = {};
+
+        // Loop through all defined shop items
+        for (const item of SHOP_ITEMS) {
+            const basePriceWei = parseEther(item.price.toString());
+            // Call the contract to get the bonding curve price
+            const currentPriceWei = await gameItemContract.getDynamicPrice(item.uri, basePriceWei);
+            prices[item.uri] = formatEther(currentPriceWei);
+        }
+        setDynamicPrices(prices);
+    } catch (e) {
+        console.warn("Error fetching dynamic prices", e);
+    }
+  }, [signer]);
+
   const fetchInventory = useCallback(async () => {
     if (signer && userAddress) {
        try {
@@ -180,12 +201,13 @@ function App() {
     }
   }, [signer, userAddress, fetchInventory]);
 
-  // Fetch balance on initial load and whenever userAddress or clickCount changes (to reflect new earnings)
+//fetch balance and prices
   useEffect(() => {
     if (userAddress) {
       fetchBalance();
+      fetchShopPrices();
     }
-  }, [userAddress, clickCount, fetchBalance]);
+  }, [userAddress, clickCount, fetchBalance, fetchShopPrices]);
 
   //Listen for account changes in MetaMask and update balance accordingly
   useEffect(() => {
@@ -314,28 +336,31 @@ function App() {
       const item = SHOP_ITEMS.find(i => i.uri === itemUri);
       if (!item) return;
 
-      //todo: doesn't show up, fix
+      const livePriceStr = dynamicPrices[itemUri] || item.price.toString();
+      const livePrice = parseFloat(livePriceStr);
       const currentBalance = parseFloat(tokenBalance);
-      if (currentBalance < item.price) {
-        toast.error(`Insufficient funds! You have ${tokenBalance} CLK but need ${item.price} CLK.`);
+
+      if (currentBalance < livePrice) {
+        toast.error(`Insufficient funds! Item costs ${livePrice} CLK (Dynamic Price).`);
         return;
       }
 
       
       try {
         setPurchasingItemUri(itemUri);
-        const priceWei = parseEther(item.price.toString());
+
+        const basePriceWei = parseEther(item.price.toString()); 
+        const livePriceWei = parseEther(livePriceStr); 
 
         const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer);
-
         const allowance = await tokenContract.allowance(userAddress, GAME_ITEM_ADDRESS);
 
 
 
-        if (allowance < priceWei) {
+        if (allowance < livePriceWei) {
           toast.info("Please approve the transaction first...");
           // 2. Approve the Shop to spend tokens
-          const txApprove = await tokenContract.approve(GAME_ITEM_ADDRESS, priceWei);
+          const txApprove = await tokenContract.approve(GAME_ITEM_ADDRESS, livePriceWei);
           await toast.promise(
               txApprove.wait(),
               { pending: "Approving usage of CLK...", success: "Approved!", error: "Approval failed" }
@@ -345,8 +370,7 @@ function App() {
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
 
       const txPromise = async () => {
-        // Pass priceWei to the new contract function
-        const tx = await gameItemContract.mintItem(userAddress, itemUri, priceWei);
+        const tx = await gameItemContract.mintItem(userAddress, itemUri, basePriceWei); //internal calculation
           console.log("Mint transaction:", tx.hash);
           return await tx.wait();
        }
@@ -361,6 +385,7 @@ function App() {
           );
 
         setTokenBalance((prev) => (parseFloat(prev) - item.price).toString()); 
+        fetchShopPrices();
         fetchInventory();
         fetchBalance();
       } catch (e: unknown) {
@@ -482,8 +507,6 @@ function App() {
   return (
     <div className="app-container">
       <ToastContainer position="bottom-right" theme="dark" />
-      <h1>Crypto Clicker</h1>
-
       <h1 onClick={toggleDebug} style={{cursor: 'pointer'}} title="Click for Admin">Crypto Clicker</h1>
       
       <div className="wallet-section">
@@ -560,29 +583,22 @@ function App() {
 
         {currentScreen === 'shop' && (
           <div className="shop-section" style={{ marginTop: '2rem', borderTop: '1px solid #444', paddingTop: '1rem' }}>
-              <h2>Shop / Mint NFTs</h2>
+             <h2>Shop / Mint NFTs (Dynamic Pricing 📈)</h2>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                   {SHOP_ITEMS.map((item, idx) => {
-                      const canAfford = parseFloat(tokenBalance) >= item.price;
+                      const livePrice = dynamicPrices[item.uri] ? dynamicPrices[item.uri] : item.price.toString();
+                      const canAfford = parseFloat(tokenBalance) >= parseFloat(livePrice);
                       const isBuyingThis = purchasingItemUri === item.uri;
                       
                       return (
                         <div key={idx} className="card" style={{ width: '200px', opacity: canAfford ? 1 : 0.7 }}>
-                            <h3>{item.name}</h3>
-                            <p>{item.description}</p>
-                            <p style={{ color: canAfford ? 'inherit' : '#ff4444' }}>
-                                Cost: {item.price} CLK
-                            </p>
-                            <button 
-                                onClick={() => buyShopItem(item.uri)}
-                                disabled={!canAfford || purchasingItemUri !== null}
-                                style={{ 
-                                    cursor: canAfford ? 'pointer' : 'not-allowed',
-                                    backgroundColor: isBuyingThis ? '#999' : (canAfford ? '' : '#444')
-                                }}
-                            >
-                                {isBuyingThis ? "Processing..." : (canAfford ? "Buy Item" : "Insufficient Funds")}
-                            </button>
+                             {/* ... item display ... */}
+                             <p>Price: <strong>{livePrice} CLK</strong></p>
+                             {livePrice !== item.price.toString() && <small style={{color: 'orange'}}>(Increased by demand! 🚀)</small>}
+                             
+                             <button onClick={() => buyShopItem(item.uri)} disabled={!canAfford || isBuyingThis}>
+                                {isBuyingThis ? "Purchasing..." : "Buy"}
+                             </button>
                         </div>
                       );
                   })}
@@ -606,11 +622,38 @@ function App() {
                       {(() => {
                         const invItem = inventory.find(i => i.id === selectedTokenId);
                         const shopItem = invItem ? SHOP_ITEMS.find(s => s.uri === invItem.uri) : null;
+                        
+                        // Calculate the EXACT stats for this specific item using its strength
+                        let exactStats = null;
+                        if (invItem) {
+                           const stats = getItemStats(invItem.uri, invItem.strength);
+                           const parts = [];
+                           if (stats.multiplier > 0) parts.push(`+${stats.multiplier.toFixed(2)} Base Click`);
+                           if (stats.passive > 0) parts.push(`+${stats.passive.toFixed(2)}/sec Passive`);
+                           exactStats = parts.join(" & ");
+                        }
+
                         if (shopItem) {
                             return (
                                 <div style={{ marginBottom: '15px', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
                                     <h2 style={{ margin: '0 0 5px 0' }}>{shopItem.name}</h2>
-                                    <p style={{ margin: 0, color: '#888', fontStyle: 'italic' }}>{shopItem.description}</p>
+                                    <p style={{ margin: 0, color: '#888', fontStyle: 'italic' }}>Type: {shopItem.description}</p>
+                                    
+                                    {/* Display the helper text for the specific stats */}
+                                    {exactStats && (
+                                        <div style={{ 
+                                            marginTop: '10px', 
+                                            background: '#333', 
+                                            padding: '8px', 
+                                            borderRadius: '6px',
+                                            borderLeft: '4px solid #4facfe'
+                                        }}>
+                                            <p style={{margin: 0, fontSize: '0.9em', color: '#aaa'}}>Item Effect:</p>
+                                            <p style={{margin: '2px 0 0 0', fontWeight: 'bold', color: '#fff'}}>
+                                                ⚡ {exactStats}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         }

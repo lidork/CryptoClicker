@@ -8,7 +8,7 @@ export const ClickerTokenABI = [
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
   "function transferFrom(address from, address to, uint256 amount) returns (bool)",
-  
+
   "function mint(address to, uint256 amount) public",
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "event Approval(address indexed owner, address indexed spender, uint256 value)"
@@ -29,7 +29,9 @@ export const GameItemABI = [
   "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)",
   
   // Custom Functions from GameItem.sol
-  "function mintItem(address player, string tokenURI, uint256 price) public returns (uint256)",
+  "function getDynamicPrice(string tokenURI, uint256 basePrice) view returns (uint256)",
+  "function uriSupply(string tokenURI) view returns (uint256)",
+  "function mintItem(address player, string tokenURI, uint256 basePrice) public returns (uint256)",
   "function items(uint256 tokenId) view returns (uint256 purchasePrice, uint256 mintDate, address originalCreator, uint256 strength)",
   "function getItemHistory(uint256 tokenId) view returns (tuple(address from, address to, uint256 timestamp)[])",
 
