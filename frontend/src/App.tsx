@@ -1,9 +1,27 @@
-import { useState, useEffect } from 'react'
-import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther } from 'ethers'
+import { useState, useEffect, useCallback } from 'react'
+import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther, isAddress } from 'ethers'
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import './App.css'
 import { WalletConnect } from './components/WalletConnect'
 import { ClickerTokenABI, GameItemABI } from './abis/contractABIs'
 import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS } from './constants'
+
+interface ItemHistoryRecord {
+  from: string;
+  to: string;
+}
+
+interface ItemMetadata {
+  purchasePrice: string;
+  mintDate: string;
+  originalCreator: string;
+}
+
+interface EthereumError {
+  reason?: string;
+  message?: string;
+}
 
 function App() {
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
@@ -19,18 +37,34 @@ function App() {
   const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'inventory'>('game');
   
   // Item Details State
-  const [selectedItemHistory, setSelectedItemHistory] = useState<any[]>([]);
-  const [selectedItemMetadata, setSelectedItemMetadata] = useState<any>(null);
+  const [selectedItemHistory, setSelectedItemHistory] = useState<ItemHistoryRecord[]>([]);
+  const [selectedItemMetadata, setSelectedItemMetadata] = useState<ItemMetadata | null>(null);
   const [transferTarget, setTransferTarget] = useState("");
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [isPayoutProcessing, setIsPayoutProcessing] = useState(false);
+  const [purchasingItemUri, setPurchasingItemUri] = useState<string | null>(null);
 
-  const handleConnect = (_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
+  const handleConnect = useCallback((_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
     setSigner(newSigner);
     setUserAddress(address);
-  };
+  }, []);
 
-  const fetchInventory = async () => {
+  const handleDisconnect = useCallback(() => {
+    setSigner(null);
+    setUserAddress(null);
+    setTokenBalance("0");
+    setInventory([]);
+    setSelectedItemHistory([]);
+    setSelectedItemMetadata(null);
+    // Reset game session data
+    setClickCount(0);
+    setUnclaimedClicks(0);
+    setClickMultiplier(1);
+    setPassiveIncome(0);
+  }, []);
+
+  //Fetch hooks to combat React array handling
+  const fetchInventory = useCallback(async () => {
     if (signer && userAddress) {
        try {
         const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
@@ -38,7 +72,8 @@ function App() {
         const filter = gameItemContract.filters.Transfer(null, userAddress);
         const events = await gameItemContract.queryFilter(filter);
         
-        const loadedInventory = await Promise.all(events.map(async (event: any) => {
+        const loadedInventory = await Promise.all(events.map(async (event) => {
+            // @ts-expect-error Event log args are not strictly typed in ethers v6 wrapper
             const tokenId = event.args[2]; // 3rd argument is tokenId
             // Double check owner (in case they transferred it away)
             const owner = await gameItemContract.ownerOf(tokenId);
@@ -54,27 +89,44 @@ function App() {
            console.error("Error fetching inventory:", e);
        }
     }
-  }
+  }, [signer, userAddress]);
 
-  const fetchBalance = async () => {
+  const fetchBalance = useCallback(async () => {
     if (signer && userAddress) {
-      // NOTE: This will fail until you deploy contracts and update the address in constants.ts
       try {
         const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer);
         const balance = await tokenContract.balanceOf(userAddress);
         setTokenBalance(formatEther(balance));
-      } catch (e) {
+      } catch {
         console.log("Contract not deployed or address incorrect");
       }
       fetchInventory();
     }
-  };
+  }, [signer, userAddress, fetchInventory]);
 
   useEffect(() => {
     if (userAddress) {
       fetchBalance();
     }
-  }, [userAddress, clickCount]);
+  }, [userAddress, clickCount, fetchBalance]);
+
+  //Listen for account changes in MetaMask and update balance accordingly
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleAccountsChanged = () => {
+        handleDisconnect();
+        toast.info("Account changed. Please reconnect your wallet.");
+      };
+      
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+
+      return () => {
+        if (window.ethereum.removeListener) {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        }
+      };
+    }
+  }, [handleDisconnect]);
 
   // Calculate Game Bonuses based on Inventory
   useEffect(() => {
@@ -109,7 +161,7 @@ function App() {
   const handleClick = () => {
     // Check if user has earned a coin but hasn't connected wallet
     if (!userAddress && (unclaimedClicks + 1) >= CLICKS_PER_TOKEN) {
-      alert("You've earned your first coin! Please connect your wallet to continue earning and claim your rewards.");
+      toast.info("You've earned your first coin! Please connect your wallet to continue earning and claim your rewards.");
       return;
     }
     setClickCount((prev) => prev + 1);
@@ -118,13 +170,13 @@ function App() {
 
   const handlePayout = async () => {
     if (!signer || !userAddress) {
-        alert("Please connect your wallet first.");
+        toast.error("Please connect your wallet first.");
         return;
     }
 
     const potentialTokens = Math.floor(unclaimedClicks / CLICKS_PER_TOKEN);
     if (potentialTokens === 0) {
-      alert(`You need ${CLICKS_PER_TOKEN} clicks to earn 1 token!`);
+      toast.info(`You need ${CLICKS_PER_TOKEN} clicks to earn 1 token!`);
       return;
     }
 
@@ -145,41 +197,87 @@ function App() {
       console.log(`Attempting to mint ${tokensToMint} tokens...`);
       const amount = parseEther(tokensToMint.toString());
       
-      const tx = await tokenContract.mint(userAddress, amount);
-      console.log("Payout transaction sent:", tx.hash);
-      
-      await tx.wait();
+      const txPromise = async () => {
+          const tx = await tokenContract.mint(userAddress, amount);
+          console.log("Payout transaction sent:", tx.hash);
+          return await tx.wait();
+      };
+
+      await toast.promise(
+        txPromise(),
+        {
+          pending: `Minting ${tokensToMint} tokens...`,
+          success: `Successfully minted ${tokensToMint} tokens!`,
+          error: 'Transaction failed'
+        }
+      );
       
       // Deduct the clicks we just paid out for
       setUnclaimedClicks((prev) => prev - (tokensToMint * CLICKS_PER_TOKEN));
       fetchBalance();
-      alert(`Successfully minted ${tokensToMint} tokens!`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Payout failed:", e);
       // Try to extract a readable error message
       let errorMessage = "Transaction failed.";
-      if (e.reason) errorMessage = e.reason;
-      else if (e.message) errorMessage = e.message;
+      if (typeof e === 'object' && e !== null) {
+          const err = e as EthereumError;
+          if (err.reason) errorMessage = err.reason;
+          else if (err.message) errorMessage = err.message;
+      }
       
-      alert(`Payout failed: ${errorMessage}`);
+      toast.error(`Payout failed: ${errorMessage}`);
     } finally {
       setIsPayoutProcessing(false);
     }
   };
 
   const buyShopItem = async (itemUri: string) => {
-      if (!signer || !userAddress) return alert("Connect wallet first!");
+      if (!signer || !userAddress) {
+        toast.error("Connect wallet first!");
+        return;
+      }
+      
+      const item = SHOP_ITEMS.find(i => i.uri === itemUri);
+      if (!item) return;
+
+      const currentBalance = parseFloat(tokenBalance);
+      if (currentBalance < item.price) {
+        toast.error(`Insufficient funds! You have ${tokenBalance} CLK but need ${item.price} CLK.`);
+        return;
+      }
+
       
       try {
-          const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
-          const tx = await gameItemContract.mintItem(userAddress, itemUri);
-          console.log("Mint transaction:", tx.hash);
-          await tx.wait();
-          alert("Item Minted!");
+        const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+        
+        setPurchasingItemUri(itemUri);
+
+        const txPromise = async () => {
+           const tx = await gameItemContract.mintItem(userAddress, itemUri);
+             console.log("Mint transaction:", tx.hash);
+             return await tx.wait();
+          }
+
+          await toast.promise(
+            txPromise(),
+            {
+               pending: `Minting ${item.name}...`,
+               success: 'Item Minted!',
+               error: 'Minting failed'
+            }
+          );
+
           fetchInventory();
-      } catch (e) {
+      } catch (e: unknown) {
           console.error("Mint failed:", e);
-          alert("Failed to buy item (Note: Currently only Owner can mint items in this version).");
+          let msg = "Failed to buy item.";
+          if (typeof e === 'object' && e !== null) {
+              const err = e as EthereumError;
+              if (err.reason) msg += ` Reason: ${err.reason}`;
+          }
+          toast.error(msg);
+      } finally {
+          setPurchasingItemUri(null);
       }
   }
 
@@ -202,7 +300,7 @@ function App() {
         console.error(error);
       }
     } else {
-      alert("Metamask is not installed!");
+      toast.error("Metamask is not installed!");
     }
   };
 
@@ -233,35 +331,57 @@ function App() {
         setSelectedTokenId(tokenId);
     } catch (e) {
         console.error("Error fetching item details:", e);
-        alert("Failed to fetch details. Is the contract deployed?");
+        toast.error("Failed to fetch details. Is the contract deployed?");
     }
   };
 
   const transferItem = async () => {
-    if (!signer || !userAddress || !selectedTokenId || !transferTarget) return;
+    if (!signer || !userAddress || !selectedTokenId) return;
+
+    if (!transferTarget) {
+        toast.warning("Please enter a recipient address.");
+        return;
+    }
+
+    if (!isAddress(transferTarget)) {
+        toast.error("Invalid Ethereum address. Please check the address and try again.");
+        return;
+    }
     
     try {
         const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
-        const tx = await gameItemContract.transferFrom(userAddress, transferTarget, selectedTokenId);
-        console.log("Transfer tx:", tx.hash);
-        await tx.wait();
         
-        alert("Item transferred successfully!");
+        const txPromise = async () => {
+            const tx = await gameItemContract.transferFrom(userAddress, transferTarget, selectedTokenId);
+            console.log("Transfer tx:", tx.hash);
+            return await tx.wait();
+        };
+
+        await toast.promise(
+            txPromise(),
+            {
+                pending: `Transferring item #${selectedTokenId} to ${transferTarget.slice(0, 6)}...`,
+                success: 'Item transferred successfully!',
+                error: 'Transfer failed'
+            }
+        );
+        
         setTransferTarget("");
-        setSelectedTokenId(null); // Close detail view
-        fetchInventory(); // Refresh list
+        setSelectedTokenId(null); 
+        fetchInventory(); 
     } catch (e) {
         console.error("Transfer failed:", e);
-        alert("Transfer failed. Check console.");
+        toast.error("Transfer failed. Check console for details.");
     }
   };
 
   return (
     <div className="app-container">
+      <ToastContainer position="bottom-right" theme="dark" />
       <h1>Crypto Clicker</h1>
       
       <div className="wallet-section">
-        <WalletConnect onConnect={handleConnect} />
+        <WalletConnect onConnect={handleConnect} onDisconnect={handleDisconnect} />
         {userAddress && <p>Address: {userAddress}</p>}
         {userAddress && <p>Token Balance: {tokenBalance} CLK</p>}
         {userAddress && (
@@ -321,14 +441,30 @@ function App() {
           <div className="shop-section" style={{ marginTop: '2rem', borderTop: '1px solid #444', paddingTop: '1rem' }}>
               <h2>Shop / Mint NFTs</h2>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  {SHOP_ITEMS.map((item, idx) => (
-                      <div key={idx} className="card" style={{ width: '200px' }}>
-                          <h3>{item.name}</h3>
-                          <p>{item.description}</p>
-                          <p>Cost: {item.price} CLK</p>
-                          <button onClick={() => buyShopItem(item.uri)}>Mint (Debug)</button>
-                      </div>
-                  ))}
+                  {SHOP_ITEMS.map((item, idx) => {
+                      const canAfford = parseFloat(tokenBalance) >= item.price;
+                      const isBuyingThis = purchasingItemUri === item.uri;
+                      
+                      return (
+                        <div key={idx} className="card" style={{ width: '200px', opacity: canAfford ? 1 : 0.7 }}>
+                            <h3>{item.name}</h3>
+                            <p>{item.description}</p>
+                            <p style={{ color: canAfford ? 'inherit' : '#ff4444' }}>
+                                Cost: {item.price} CLK
+                            </p>
+                            <button 
+                                onClick={() => buyShopItem(item.uri)}
+                                disabled={!canAfford || purchasingItemUri !== null}
+                                style={{ 
+                                    cursor: canAfford ? 'pointer' : 'not-allowed',
+                                    backgroundColor: isBuyingThis ? '#999' : (canAfford ? '' : '#444')
+                                }}
+                            >
+                                {isBuyingThis ? "Processing..." : (canAfford ? "Buy Item" : "Insufficient Funds")}
+                            </button>
+                        </div>
+                      );
+                  })}
               </div>
           </div>
         )}
@@ -346,6 +482,19 @@ function App() {
                       zIndex: 1000, background: '#2a2a2a', border: '2px solid #646cff', padding: '20px', 
                       borderRadius: '12px', minWidth: '320px', maxWidth: '90%', boxShadow: '0 0 20px rgba(0,0,0,0.8)'
                   }}>
+                      {(() => {
+                        const invItem = inventory.find(i => i.id === selectedTokenId);
+                        const shopItem = invItem ? SHOP_ITEMS.find(s => s.uri === invItem.uri) : null;
+                        if (shopItem) {
+                            return (
+                                <div style={{ marginBottom: '15px', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
+                                    <h2 style={{ margin: '0 0 5px 0' }}>{shopItem.name}</h2>
+                                    <p style={{ margin: 0, color: '#888', fontStyle: 'italic' }}>{shopItem.description}</p>
+                                </div>
+                            );
+                        }
+                        return null;
+                      })()}
                       <h3>Details for Item #{selectedTokenId}</h3>
                       <button onClick={() => setSelectedTokenId(null)} style={{position: 'absolute', top: '10px', right: '10px', background: 'transparent', border: '1px solid #555', fontSize: '0.8em'}}>✕</button>
                       
@@ -359,7 +508,7 @@ function App() {
                       <div style={{textAlign: 'left', maxHeight: '150px', overflowY: 'auto', background: '#111', padding: '10px', borderRadius: '4px', marginBottom: '15px'}}>
                           <h4 style={{marginTop: 0}}>Ownership History</h4>
                           {selectedItemHistory.length === 0 ? <p style={{color: '#666', fontStyle: 'italic'}}>No history recorded.</p> : 
-                            selectedItemHistory.map((record: any, i: number) => (
+                            selectedItemHistory.map((record, i) => (
                               <p key={i} style={{fontSize: '0.8em', margin: '5px 0', borderBottom: '1px solid #222', paddingBottom: '2px'}}>
                                   <span style={{color: '#aaa'}}>From:</span> {record.from === '0x0000000000000000000000000000000000000000' ? 'Mint' : record.from.slice(0,6)+'...'} <br/>
                                   <span style={{color: '#aaa'}}>To:</span> {record.to.toLowerCase() === userAddress?.toLowerCase() ? <span style={{color: 'lime'}}>You</span> : record.to.slice(0,6)+'...'} 
@@ -386,18 +535,23 @@ function App() {
 
               {inventory.length === 0 ? <p>No items owned.</p> : (
                   <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                      {inventory.map((item) => (
-                          <div key={item.id} className="card" 
-                               style={{ width: '160px', cursor: 'pointer', border: '1px solid #444', transition: 'all 0.2s', padding: '15px' }} 
-                               onClick={() => fetchItemDetails(item.id)}
-                               onMouseOver={(e) => e.currentTarget.style.borderColor = '#646cff'}
-                               onMouseOut={(e) => e.currentTarget.style.borderColor = '#444'}
-                          >
-                              <div style={{fontSize: '2em', marginBottom: '10px'}}>⚔️</div>
-                              <p style={{margin: '5px 0'}}><strong>Item #{item.id}</strong></p>
-                              <button style={{marginTop: '10px', width: '100%', fontSize: '0.8em'}}>View Details</button>
-                          </div>
-                      ))}
+                      {inventory.map((item) => {
+                          const itemDetails = SHOP_ITEMS.find(s => s.uri === item.uri);
+                          return (
+                            <div key={item.id} className="card" 
+                                style={{ width: '160px', cursor: 'pointer', border: '1px solid #444', transition: 'all 0.2s', padding: '15px' }} 
+                                onClick={() => fetchItemDetails(item.id)}
+                                onMouseOver={(e) => e.currentTarget.style.borderColor = '#646cff'}
+                                onMouseOut={(e) => e.currentTarget.style.borderColor = '#444'}
+                            >
+                                <div style={{fontSize: '2em', marginBottom: '10px'}}>⚔️</div>
+                                <p style={{margin: '5px 0'}}><strong>{itemDetails?.name || `Item #${item.id}`}</strong></p>
+                                {itemDetails && <p style={{fontSize: '0.8em', color: '#aaa'}}>{itemDetails.description}</p>}
+                                <p style={{fontSize: '0.7em', color: '#666'}}>ID: {item.id}</p>
+                                <button style={{marginTop: '10px', width: '100%', fontSize: '0.8em'}}>View Details</button>
+                            </div>
+                          );
+                      })}
                   </div>
               )}
           </div>

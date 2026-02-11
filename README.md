@@ -38,12 +38,9 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 ## 4. TODO
 
 ### Phase 1: Easy Improvements (UI/UX)
-- [ ] **Better Loading States**: Add spinners or skeleton loaders when fetching inventory data or processing transactions.
 - [ ] **Error Notifications**: Replace browser `alert()` calls with a toast notification library (e.g., `react-toastify`) for better user experience.
-- [ ] **Responsive Design**: Improve CSS to ensure the game looks good on mobile devices (stacking flex containers).
 
 ### Phase 2: Game Logic Enhancements
-- [ ] **Shop Validation**: Disable the "Buy" button if the user has insufficient token balance (currently relies on contract revert).
 - [ ] **Dynamic Pricing**: Implement logic where item prices increase after every purchase (bonding curve) or based on supply.
 - [ ] **Leaderboard**: Create a simple leaderboard showing addresses with the most `CLK` tokens (requires indexing events).
 
