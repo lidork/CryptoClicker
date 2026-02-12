@@ -42,7 +42,7 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 
 ### Phase 2: Game Logic Enhancements
 - [x] **Dynamic Pricing**: Implement logic where item prices increase after every purchase (bonding curve) or based on supply.
-- [ ] **Leaderboard**: Create a simple leaderboard showing addresses with the most `CLK` tokens (requires indexing events).
+- [x] **Leaderboard**: Create a simple leaderboard showing addresses with the most `CLK` tokens (requires indexing events).
 - [ ] **Expand Shop Inventory**: Increase item variety to at least 6 items (e.g., Potions, Pickaxes) with unique bonus mechanics implemented in the frontend.
 
 ### Phase 3: ERC-8004 "Lite" Implementation (Identity & Validation)

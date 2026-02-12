@@ -1,23 +1,29 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther, isAddress } from 'ethers'
+import { BrowserProvider, JsonRpcSigner, Contract, formatEther, parseEther, isAddress, ZeroAddress } from 'ethers'
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css'
-import { WalletConnect } from './components/WalletConnect'
+import { AgentsScreen } from './components/AgentsScreen'
+import { AgentCreationModal } from './components/AgentCreationModal'
+import { AgentDetailsModal } from './components/AgentDetailsModal'
+import { GameScreen } from './components/GameScreen'
+import { InventoryScreen } from './components/InventoryScreen'
+import { ItemDetailsModal } from './components/ItemDetailsModal'
+import { LeaderboardModal } from './components/LeaderboardModal'
+import { NavigationBar } from './components/NavigationBar'
+import { ShopScreen } from './components/ShopScreen'
+import { WalletSection } from './components/WalletSection'
 import { ClickerTokenABI, GameItemABI } from './abis/contractABIs'
-import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS } from './constants'
-
-interface ItemHistoryRecord {
-  from: string;
-  to: string;
-}
-
-interface ItemMetadata {
-  purchasePrice: string;
-  mintDate: string;
-  originalCreator: string;
-  strength: string;
-}
+import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS, AGENT_CLASSES, AGENT_MINT_COST } from './constants'
+import type {
+  AgentClassConfig,
+  AgentDetails,
+  InventoryItem,
+  ItemHistoryRecord,
+  ItemMetadata,
+  LeaderboardEntry,
+  ShopItem
+} from './types'
 
 interface EthereumError {
   reason?: string;
@@ -38,8 +44,8 @@ function App() {
   const [clickMultiplier, setClickMultiplier] = useState(1);
   const [passiveIncome, setPassiveIncome] = useState(0);
   const [tokenBalance, setTokenBalance] = useState("0");
-  const [inventory, setInventory] = useState<{id: string, uri: string, strength: number}[]>([]);
-  const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'inventory'>('game');
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'agents' | 'inventory'>('game');
   
   // Item Details State
   const [selectedItemHistory, setSelectedItemHistory] = useState<ItemHistoryRecord[]>([]);
@@ -49,6 +55,16 @@ function App() {
   const [isPayoutProcessing, setIsPayoutProcessing] = useState(false);
   const [purchasingItemUri, setPurchasingItemUri] = useState<string | null>(null);
   const [dynamicPrices, setDynamicPrices] = useState<Record<string, string>>({});
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  // Agent state
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
+  const [selectedAgentClass, setSelectedAgentClass] = useState<string | null>(null);
+  const [agentSupplies, setAgentSupplies] = useState<Record<string, number>>({});
+  const [showAgentCreationModal, setShowAgentCreationModal] = useState(false);
+  const [selectedAgentDetails, setSelectedAgentDetails] = useState<AgentDetails | null>(null);
+  const [agentBeingViewed, setAgentBeingViewed] = useState<string | null>(null);
 
 
   const handleConnect = useCallback((_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
@@ -84,10 +100,10 @@ function App() {
     if (!signer || !userAddress) return;
     try {
       const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer);
-      const amount = parseEther("100"); // 100 Tokens
-      const tx = await tokenContract.mint(userAddress, amount);
+      const amount = parseEther("500"); // 500 Tokens
+      const tx = await tokenContract.ownerMint(userAddress, amount);
       await tx.wait();
-      toast.success("Debug: Minted 100 Tokens");
+      toast.success("Debug: Minted 500 Tokens");
       fetchBalance();
     } catch (e) {
       console.error(e);
@@ -122,6 +138,60 @@ function App() {
     }
   };
 
+  const fetchLeaderboard = async () => {
+    if (!signer && !window.ethereum) return;
+
+    //replace with signer later
+    
+    const provider = new BrowserProvider(window.ethereum);
+    const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, provider);
+
+    try {
+        toast.info("Indexing blockchain events for leaderboard...");
+        
+        // Fetch EVERYTHING from Block 0
+        const filter = tokenContract.filters.Transfer();
+        const events = await tokenContract.queryFilter(filter, 0);
+
+        const balances: Record<string, bigint> = {};
+
+        // Replay History
+        events.forEach((event) => {
+            // @ts-expect-error Ethers args
+            const from = event.args[0];
+            // @ts-expect-error Ethers args
+            const to = event.args[1];
+            // @ts-expect-error Ethers args
+            const value = event.args[2];
+
+            if (from !== ZeroAddress) {
+                balances[from] = (balances[from] || 0n) - value;
+            }
+            if (to !== ZeroAddress) {
+                balances[to] = (balances[to] || 0n) + value;
+            }
+        });
+
+        const sortedList = Object.entries(balances)
+            .map(([addr, bal]) => ({ 
+                address: addr, 
+                balance: parseFloat(formatEther(bal)) // Keep as number for sorting
+            }))
+            .sort((a, b) => b.balance - a.balance) // Highest first
+            .slice(0, 10) // Top 10
+            .map(item => ({ 
+                address: item.address, 
+                balance: item.balance.toFixed(2) // String for display
+            }));
+
+        setLeaderboard(sortedList);
+        setShowLeaderboard(true);
+    } catch (e) {
+        console.error("Leaderboard error:", e);
+        toast.error("Could not fetch leaderboard data.");
+    }
+  };
+
   const fetchShopPrices = useCallback(async () => {
     if (!signer) return;
     try {
@@ -142,51 +212,93 @@ function App() {
   }, [signer]);
 
   const fetchInventory = useCallback(async () => {
-    if (signer && userAddress) {
-       try {
-        const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
-        const filter = gameItemContract.filters.Transfer(null, userAddress);
-        const events = await gameItemContract.queryFilter(filter, 0);
-        
-        const loadedInventory = await Promise.all(events.map(async (event) => {
-          try {
+  if (signer && userAddress) {
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+      const filter = gameItemContract.filters.Transfer(null, userAddress);
+      const events = await gameItemContract.queryFilter(filter, 0);
+      
+      console.log(`Found ${events.length} transfer events for ${userAddress}`);
+      
+      const loadedInventory = await Promise.all(events.map(async (event) => {
+        try {
           // @ts-expect-error Ethers v6 args
-          const tokenId = event.args[2]; 
+          const tokenId = event.args[2];
           const owner = await gameItemContract.ownerOf(tokenId);
           
           if (owner.toLowerCase() === userAddress.toLowerCase()) {
-               const uri = await gameItemContract.tokenURI(tokenId);
-               // Fetch the metadata struct to get the specific strength of this item
-               const meta = await gameItemContract.items(tokenId);
-
-               const strengthVal = meta.strength ? Number(meta.strength) : 1;
-
-               return { 
-                 id: tokenId.toString(), 
-                 uri, 
-                 strength:strengthVal
-               };
+            const uri = await gameItemContract.tokenURI(tokenId);
+            
+            let nftType;
+            try {
+              nftType = await gameItemContract.getNftType(tokenId);
+            } catch (e) {
+              console.warn(`Could not get NFT type for ${tokenId}:`, e);
+              nftType = 0; // Default to lootbox if type check fails
+            }
+            
+            const isAgent = Number(nftType) === 1; // AGENT = 1, LOOTBOX = 0
+            console.log(`Token ${tokenId}: isAgent=${isAgent}, nftType=${nftType}`);
+            
+            if (isAgent) {
+              // Fetch agent stats
+              try {
+                const stats = await gameItemContract.getAgentStats(tokenId);
+                const agentClass = await gameItemContract.getAgentClass(tokenId);
+                console.log(`Agent ${tokenId}: class=${agentClass}, level=${stats.level}`);
+                
+                return {
+                  id: tokenId.toString(),
+                  uri,
+                  strength: Number(stats.strength),
+                  isAgent: true,
+                  agentClass,
+                  level: Number(stats.level),
+                  miningRate: Number(stats.miningRate),
+                  experience: Number(stats.experience),
+                  xpGainVariance: Number(stats.xpGainVariance)
+                };
+              } catch (agentErr) {
+                console.error(`Failed to fetch agent ${tokenId} stats:`, agentErr);
+                return null;
+              }
+            } else {
+              // Fetch lootbox stats
+              try {
+                const meta = await gameItemContract.items(tokenId);
+                return {
+                  id: tokenId.toString(),
+                  uri,
+                  strength: Number(meta.strength),
+                  isAgent: false
+                };
+              } catch (lootErr) {
+                console.error(`Failed to fetch lootbox ${tokenId} stats:`, lootErr);
+                return null;
+              }
+            }
           }
         } catch (err) {
-          // Token might have been burned or errored
           console.warn("Item fetch error", err);
-       }
-       return null;
+        }
+        return null;
       }));
 
       const uniqueItemsMap = new Map();
-        loadedInventory.forEach(item => {
-            if (item) {
-                uniqueItemsMap.set(item.id, item);
-            }
-        });
-        
-        setInventory(Array.from(uniqueItemsMap.values()));
-       } catch (e) {
-           console.error("Error fetching inventory:", e);
-       }
+      loadedInventory.forEach(item => {
+        if (item) {
+          uniqueItemsMap.set(item.id, item);
+        }
+      });
+      
+      const inventoryArray = Array.from(uniqueItemsMap.values());
+      console.log(`Loaded inventory: ${inventoryArray.length} items total`, inventoryArray);
+      setInventory(inventoryArray);
+    } catch (e) {
+      console.error("Error fetching inventory:", e);
     }
-  }, [signer, userAddress]);
+  }
+}, [signer, userAddress]);
 
   const fetchBalance = useCallback(async () => {
     if (signer && userAddress) {
@@ -201,13 +313,32 @@ function App() {
     }
   }, [signer, userAddress, fetchInventory]);
 
+  const fetchAgentSupplies = useCallback(async () => {
+  if (!signer) return;
+  try {
+    const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+    const supplies: Record<string, number> = {};
+    
+    for (const agentClass of AGENT_CLASSES) {
+      const supply = await gameItemContract.getAgentSupplyByClass(agentClass.name);
+      supplies[agentClass.name] = Number(supply);
+    }
+    
+    setAgentSupplies(supplies);
+  } catch (e) {
+    console.warn("Error fetching agent supplies:", e);
+  }
+}, [signer]);
+
+
 //fetch balance and prices
   useEffect(() => {
-    if (userAddress) {
-      fetchBalance();
-      fetchShopPrices();
-    }
-  }, [userAddress, clickCount, fetchBalance, fetchShopPrices]);
+  if (userAddress) {
+    fetchBalance();
+    fetchShopPrices();
+    fetchAgentSupplies();
+  }
+}, [userAddress, clickCount, fetchBalance, fetchShopPrices, fetchAgentSupplies]);
 
   //Listen for account changes in MetaMask and update balance accordingly
   useEffect(() => {
@@ -359,7 +490,7 @@ function App() {
 
         if (allowance < livePriceWei) {
           toast.info("Please approve the transaction first...");
-          // 2. Approve the Shop to spend tokens
+          // Approve the Shop to spend tokens
           const txApprove = await tokenContract.approve(GAME_ITEM_ADDRESS, livePriceWei);
           await toast.promise(
               txApprove.wait(),
@@ -370,7 +501,7 @@ function App() {
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
 
       const txPromise = async () => {
-        const tx = await gameItemContract.mintItem(userAddress, itemUri, basePriceWei); //internal calculation
+        const tx = await gameItemContract.mintLootboxItem(userAddress, itemUri, basePriceWei); //internal calculation
           console.log("Mint transaction:", tx.hash);
           return await tx.wait();
        }
@@ -401,6 +532,75 @@ function App() {
         setPurchasingItemUri(null);
     }
   }
+
+const createAgent = async (agentClass: string) => {
+  if (!signer || !userAddress) {
+    toast.error("Connect wallet first!");
+    return;
+  }
+
+  const balance = parseFloat(tokenBalance);
+  if (balance < AGENT_MINT_COST) {
+    toast.error(`Insufficient funds! Agent costs ${AGENT_MINT_COST} CLK.`);
+    return;
+  }
+
+  setIsCreatingAgent(true);
+
+  try {
+    const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer);
+    const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+
+    // Check allowance
+    const costWei = parseEther(AGENT_MINT_COST.toString());
+    const allowance = await tokenContract.allowance(userAddress, GAME_ITEM_ADDRESS);
+
+    if (allowance < costWei) {
+      toast.info("Approving agent creation cost...");
+      const txApprove = await tokenContract.approve(GAME_ITEM_ADDRESS, costWei);
+      await txApprove.wait();
+    }
+
+    // Create agent
+    const agentURI = `ipfs://agent-${agentClass.toLowerCase()}`;
+    
+    const txPromise = async () => {
+      const tx = await gameItemContract.mintAgent(userAddress, agentClass, agentURI);
+      console.log("Agent creation tx:", tx.hash);
+      return await tx.wait();
+    };
+
+    await toast.promise(
+      txPromise(),
+      {
+        pending: `Creating ${agentClass} Agent...`,
+        success: `${agentClass} Agent created! Your journey begins...`,
+        error: "Failed to create agent"
+      }
+    );
+
+    setSelectedAgentClass(null);
+    setShowAgentCreationModal(false);
+    
+    // Add a small delay to ensure blockchain has processed the transaction
+    setTimeout(() => {
+      fetchBalance();
+      fetchInventory();
+      fetchAgentSupplies();
+    }, 2000);
+  } catch (e: unknown) {
+    console.error("Agent creation failed:", e);
+    let msg = "Failed to create agent.";
+    if (typeof e === 'object' && e !== null) {
+      const err = e as EthereumError;
+      if (err.reason) msg += ` Reason: ${err.reason}`;
+      else if (err.message) msg += ` Error: ${err.message}`;
+    }
+    toast.error(msg);
+  } finally {
+    setIsCreatingAgent(false);
+  }
+};
 
   const addToWallet = async () => {
     if (window.ethereum) {
@@ -464,6 +664,63 @@ function App() {
     }
   };
 
+  const fetchAgentDetails = async (tokenId: string) => {
+  if (!signer) return;
+  try {
+    const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+    
+    // Get agent stats
+    const agentStats = await gameItemContract.getAgentStats(tokenId);
+    const agentClass = await gameItemContract.getAgentClass(tokenId);
+    
+    setSelectedAgentDetails({
+      tokenId,
+      level: Number(agentStats.level),
+      miningRate: Number(agentStats.miningRate),
+      creationTime: Number(agentStats.creationTime),
+      experience: Number(agentStats.experience),
+      strength: Number(agentStats.strength),
+      agentClass: agentClass,
+      xpGainVariance: Number(agentStats.xpGainVariance)
+    });
+    setAgentBeingViewed(tokenId);
+
+    // Get history
+    const history = await gameItemContract.getItemHistory(tokenId);
+    const normalizedHistory: ItemHistoryRecord[] = history.map((record: { from: string; to: string }) => ({
+      from: record.from,
+      to: record.to
+    }));
+    setSelectedItemHistory(normalizedHistory);
+  } catch (e) {
+    console.error("Error fetching agent details:", e);
+    toast.error("Failed to fetch agent details");
+  }
+};
+
+const getAgentSkills = (agentClass: string, level: number) => {
+  void level;
+  const baseSkills: Record<string, string[]> = {
+    "Warrior": [
+      "⚔️ Cleave: Every 10 levels, gain +5% click multiplier",
+      "🛡️ Counter: Passive income provides click boost every 30 seconds",
+      "💪 Strength Boost: Base mining rate increases by 1% per level"
+    ],
+    "Guardian": [
+      "🛡️ Fortify: Every 5 levels, gain +10% passive income",
+      "🔒 Protect: Bonus XP from transfers (+5 XP per trade)",
+      "⚡ Steady: Consistent leveling speed, XP gain variance reduced"
+    ],
+    "Sorcerer": [
+      "🔮 Arcane Power: Every level, gain +2% mining rate",
+      "✨ Mana Surge: Every 15 levels unlock a temporary +50% mining boost",
+      "🌟 Ancient Knowledge: Learn faster - XP requirements decrease by 2% per level"
+    ]
+  };
+
+  return baseSkills[agentClass] || [];
+};
+
   const transferItem = async () => {
     if (!signer || !userAddress || !selectedTokenId) return;
 
@@ -509,61 +766,29 @@ function App() {
       <ToastContainer position="bottom-right" theme="dark" />
       <h1 onClick={toggleDebug} style={{cursor: 'pointer'}} title="Click for Admin">Crypto Clicker</h1>
       
-      <div className="wallet-section">
-        <WalletConnect onConnect={handleConnect} onDisconnect={handleDisconnect} />
-        {userAddress && <p>Address: {userAddress}</p>}
-        {userAddress && <p>Token Balance: {tokenBalance} CLK</p>}
-        {userAddress && (
-          <button onClick={addToWallet} style={{ fontSize: '0.8em', padding: '5px 10px', marginTop: '5px' }}>
-            🦊 Add CLK to Wallet
-          </button>
-        )}
-      </div>
+      <WalletSection
+        userAddress={userAddress}
+        tokenBalance={tokenBalance}
+        onAddToWallet={addToWallet}
+        onLeaderboard={fetchLeaderboard}
+        onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
+      />
 
-      <nav style={{ display: 'flex', justifyContent: 'center', gap: '20px', margin: '20px 0' }}>
-        <button 
-          onClick={() => setCurrentScreen('game')}
-          style={{ backgroundColor: currentScreen === 'game' ? '#646cff' : '#1a1a1a' }}
-        >
-          🎮 Play
-        </button>
-        <button 
-          onClick={() => setCurrentScreen('shop')}
-          style={{ backgroundColor: currentScreen === 'shop' ? '#646cff' : '#1a1a1a' }}
-        >
-          🛒 Shop
-        </button>
-        <button 
-          onClick={() => setCurrentScreen('inventory')}
-          style={{ backgroundColor: currentScreen === 'inventory' ? '#646cff' : '#1a1a1a' }}
-        >
-          🎒 Inventory
-        </button>
-      </nav>
+      <NavigationBar currentScreen={currentScreen} onChange={setCurrentScreen} />
 
       <div className="game-area">
         {currentScreen === 'game' && (
-          <div className="card">
-            <button onClick={handleClick} style={{ fontSize: '2em', padding: '20px' }}>
-              Click Me!
-            </button>
-            <p>
-              Clicks (Session): {parseFloat(clickCount.toFixed(3))}
-            </p>
-            <p>
-              Multipler: x{clickMultiplier} {passiveIncome > 0 && `| Passive: +${passiveIncome}/sec`}
-            </p>
-            <p>
-              Unclaimed Clicks: {parseFloat(unclaimedClicks.toFixed(3))} / {CLICKS_PER_TOKEN} for next coin
-            </p>
-            <button 
-              onClick={handlePayout} 
-              disabled={unclaimedClicks < CLICKS_PER_TOKEN || isPayoutProcessing}
-              style={{ marginTop: '10px' }}
-            >
-              {isPayoutProcessing ? "Processing..." : `Payout ${Math.floor(unclaimedClicks / CLICKS_PER_TOKEN)} Tokens`}
-            </button>
-          </div>
+          <GameScreen
+            clickCount={clickCount}
+            clickMultiplier={clickMultiplier}
+            passiveIncome={passiveIncome}
+            unclaimedClicks={unclaimedClicks}
+            clicksPerToken={CLICKS_PER_TOKEN}
+            isPayoutProcessing={isPayoutProcessing}
+            onClick={handleClick}
+            onPayout={handlePayout}
+          />
         )}
 
       {showDebug && (
@@ -574,171 +799,88 @@ function App() {
         }}>
           <h3 style={{margin: '0 0 10px 0', color: 'red'}}>🛠️ Debug Menu</h3>
           <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
-             <button onClick={debugMintTokens}>Give 100 Tokens (Owner Only)</button>
+             <button onClick={debugMintTokens}>Give 500 Tokens (Owner Only)</button>
              <button onClick={debugResetClicks}>Set 100 Free Clicks</button>
              <button onClick={() => setShowDebug(false)}>Close Menu</button>
           </div>
         </div>
       )}
-
         {currentScreen === 'shop' && (
-          <div className="shop-section" style={{ marginTop: '2rem', borderTop: '1px solid #444', paddingTop: '1rem' }}>
-             <h2>Shop / Mint NFTs (Dynamic Pricing 📈)</h2>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  {SHOP_ITEMS.map((item, idx) => {
-                      const livePrice = dynamicPrices[item.uri] ? dynamicPrices[item.uri] : item.price.toString();
-                      const canAfford = parseFloat(tokenBalance) >= parseFloat(livePrice);
-                      const isBuyingThis = purchasingItemUri === item.uri;
-                      
-                      return (
-                        <div key={idx} className="card" style={{ width: '200px', opacity: canAfford ? 1 : 0.7 }}>
-                             {/* ... item display ... */}
-                             <p>Price: <strong>{livePrice} CLK</strong></p>
-                             {livePrice !== item.price.toString() && <small style={{color: 'orange'}}>(Increased by demand! 🚀)</small>}
-                             
-                             <button onClick={() => buyShopItem(item.uri)} disabled={!canAfford || isBuyingThis}>
-                                {isBuyingThis ? "Purchasing..." : "Buy"}
-                             </button>
-                        </div>
-                      );
-                  })}
-              </div>
-          </div>
+          <ShopScreen
+            items={SHOP_ITEMS as ShopItem[]}
+            dynamicPrices={dynamicPrices}
+            tokenBalance={tokenBalance}
+            purchasingItemUri={purchasingItemUri}
+            onBuy={buyShopItem}
+          />
+        )}
+
+        {currentScreen === 'agents' && (
+          <AgentsScreen
+            agentClasses={AGENT_CLASSES as AgentClassConfig[]}
+            tokenBalance={tokenBalance}
+            agentSupplies={agentSupplies}
+            isCreatingAgent={isCreatingAgent}
+            selectedAgentClass={selectedAgentClass}
+            onOpenCreateModal={(agentClass) => {
+              setSelectedAgentClass(agentClass);
+              setShowAgentCreationModal(true);
+            }}
+            agentMintCost={AGENT_MINT_COST}
+          />
         )}
 
         {currentScreen === 'inventory' && (
-          <div className="inventory-section" style={{ marginTop: '2rem', borderTop: '1px solid #444', paddingTop: '1rem' }}>
-              <h2>My Inventory</h2>
-              
-              {/* Item Details Modal / View */}
-              {selectedTokenId && (
-                <>
-                  <div style={{position: 'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.7)', zIndex: 999}} onClick={() => setSelectedTokenId(null)} />
-                  <div className="item-details" style={{ 
-                      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', 
-                      zIndex: 1000, background: '#2a2a2a', border: '2px solid #646cff', padding: '20px', 
-                      borderRadius: '12px', minWidth: '320px', maxWidth: '90%', boxShadow: '0 0 20px rgba(0,0,0,0.8)'
-                  }}>
-                      {(() => {
-                        const invItem = inventory.find(i => i.id === selectedTokenId);
-                        const shopItem = invItem ? SHOP_ITEMS.find(s => s.uri === invItem.uri) : null;
-                        
-                        // Calculate the EXACT stats for this specific item using its strength
-                        let exactStats = null;
-                        if (invItem) {
-                           const stats = getItemStats(invItem.uri, invItem.strength);
-                           const parts = [];
-                           if (stats.multiplier > 0) parts.push(`+${stats.multiplier.toFixed(2)} Base Click`);
-                           if (stats.passive > 0) parts.push(`+${stats.passive.toFixed(2)}/sec Passive`);
-                           exactStats = parts.join(" & ");
-                        }
+          <InventoryScreen
+            inventory={inventory}
+            shopItems={SHOP_ITEMS as ShopItem[]}
+            onItemClick={fetchItemDetails}
+            onAgentClick={fetchAgentDetails}
+          />
+        )}
 
-                        if (shopItem) {
-                            return (
-                                <div style={{ marginBottom: '15px', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
-                                    <h2 style={{ margin: '0 0 5px 0' }}>{shopItem.name}</h2>
-                                    <p style={{ margin: 0, color: '#888', fontStyle: 'italic' }}>Type: {shopItem.description}</p>
-                                    
-                                    {/* Display the helper text for the specific stats */}
-                                    {exactStats && (
-                                        <div style={{ 
-                                            marginTop: '10px', 
-                                            background: '#333', 
-                                            padding: '8px', 
-                                            borderRadius: '6px',
-                                            borderLeft: '4px solid #4facfe'
-                                        }}>
-                                            <p style={{margin: 0, fontSize: '0.9em', color: '#aaa'}}>Item Effect:</p>
-                                            <p style={{margin: '2px 0 0 0', fontWeight: 'bold', color: '#fff'}}>
-                                                ⚡ {exactStats}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        }
-                        return null;
-                      })()}
-                      <h3>Details for Item #{selectedTokenId}</h3>
-                      <button onClick={() => setSelectedTokenId(null)} style={{position: 'absolute', top: '10px', right: '10px', background: 'transparent', border: '1px solid #555', fontSize: '0.8em'}}>✕</button>
-                      
-                      {selectedItemMetadata && (
-                          <div style={{textAlign: 'left', marginBottom: '15px', padding: '10px', background: '#333', borderRadius: '4px'}}>
-                              <p style={{margin: '5px 0'}}><strong>Mint Date:</strong> {selectedItemMetadata.mintDate}</p>
-                              <p style={{margin: '5px 0'}}><strong>Creator:</strong> {selectedItemMetadata.originalCreator === userAddress ? <span style={{color: 'lime'}}>You</span> : selectedItemMetadata.originalCreator.slice(0,8)+'...'}</p>
-                          </div>
-                      )}
+        {showAgentCreationModal && selectedAgentClass && (
+          <AgentCreationModal
+            selectedAgentClass={selectedAgentClass}
+            tokenBalance={tokenBalance}
+            isCreatingAgent={isCreatingAgent}
+            agentMintCost={AGENT_MINT_COST}
+            onConfirm={createAgent}
+            onClose={() => setShowAgentCreationModal(false)}
+          />
+        )}
 
-                      <div style={{textAlign: 'left', maxHeight: '150px', overflowY: 'auto', background: '#111', padding: '10px', borderRadius: '4px', marginBottom: '15px'}}>
-                          <h4 style={{marginTop: 0}}>Ownership History</h4>
-                          {selectedItemHistory.length === 0 ? <p style={{color: '#666', fontStyle: 'italic'}}>No history recorded.</p> : 
-                            selectedItemHistory.map((record, i) => (
-                              <p key={i} style={{fontSize: '0.8em', margin: '5px 0', borderBottom: '1px solid #222', paddingBottom: '2px'}}>
-                                  <span style={{color: '#aaa'}}>From:</span> {record.from === '0x0000000000000000000000000000000000000000' ? 'Mint' : record.from.slice(0,6)+'...'} <br/>
-                                  <span style={{color: '#aaa'}}>To:</span> {record.to.toLowerCase() === userAddress?.toLowerCase() ? <span style={{color: 'lime'}}>You</span> : record.to.slice(0,6)+'...'} 
-                              </p>
-                          ))}
-                      </div>
+        {showLeaderboard && (
+          <LeaderboardModal
+            leaderboard={leaderboard}
+            onClose={() => setShowLeaderboard(false)}
+          />
+        )}
 
-                      <div style={{marginTop: '15px', borderTop: '1px solid #555', paddingTop: '15px'}}>
-                          <h4 style={{marginTop: 0}}>Transfer Item</h4>
-                          <div style={{display: 'flex', gap: '5px'}}>
-                            <input 
-                                type="text" 
-                                placeholder="Recipient Address (0x...)" 
-                                value={transferTarget}
-                                onChange={(e) => setTransferTarget(e.target.value)}
-                                style={{flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: 'white'}}
-                            />
-                            <button onClick={transferItem} style={{background: '#646cff'}}>Send</button>
-                          </div>
-                      </div>
-                  </div>
-                </>
-              )}
+        {selectedTokenId && !agentBeingViewed && (
+          <ItemDetailsModal
+            selectedTokenId={selectedTokenId}
+            inventory={inventory}
+            shopItems={SHOP_ITEMS as ShopItem[]}
+            selectedItemMetadata={selectedItemMetadata}
+            selectedItemHistory={selectedItemHistory}
+            transferTarget={transferTarget}
+            userAddress={userAddress}
+            onClose={() => setSelectedTokenId(null)}
+            onTransferTargetChange={setTransferTarget}
+            onTransfer={transferItem}
+            getItemStats={getItemStats}
+          />
+        )}
 
-              {inventory.length === 0 ? <p>No items owned.</p> : (
-                  <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                      {inventory.map((item) => {
-                          const itemDetails = SHOP_ITEMS.find(s => s.uri === item.uri);
-                          
-                          // Calculate color based on rarity/strength
-                          // 1-20: Gray (Common), 21-40: Blue (Rare), 41-50: Gold (Legendary)
-                          let borderColor = '#444';
-                          if (item.strength > 40) borderColor = 'gold';
-                          else if (item.strength > 20) borderColor = '#4facfe';
-
-                          return (
-                            <div key={item.id} className="card" 
-                                style={{ 
-                                  width: '160px', 
-                                  cursor: 'pointer', 
-                                  border: `2px solid ${borderColor}`, // Show rarity border
-                                  transition: 'all 0.2s', 
-                                  padding: '15px',
-                                  position: 'relative'
-                                }} 
-                                onClick={() => fetchItemDetails(item.id)}
-                            >
-                                {/* Show Strength Badge */}
-                                <div style={{
-                                  position: 'absolute', top: '5px', right: '5px', 
-                                  fontSize: '0.7em', background: '#333', padding: '2px 5px', borderRadius: '4px',
-                                  color: borderColor
-                                }}>
-                                  Quality: {item.strength}/50
-                                </div>
-
-                                <div style={{fontSize: '2em', marginBottom: '10px', marginTop: '10px'}}>⚔️</div>
-                                <p style={{margin: '5px 0'}}><strong>{itemDetails?.name || `Item #${item.id}`}</strong></p>
-
-                                <button style={{marginTop: '10px', width: '100%', fontSize: '0.8em'}}>View Details</button>
-                            </div>
-                          );
-                      })}
-                  </div>
-              )}
-          </div>
+        {agentBeingViewed && selectedAgentDetails && (
+          <AgentDetailsModal
+            selectedAgentDetails={selectedAgentDetails}
+            selectedItemHistory={selectedItemHistory}
+            userAddress={userAddress}
+            getAgentSkills={getAgentSkills}
+            onClose={() => setAgentBeingViewed(null)}
+          />
         )}
       </div>
     </div>
