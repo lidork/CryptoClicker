@@ -5,6 +5,9 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./libraries/QuestLootLib.sol";
+import "./libraries/PricingLib.sol";
+import "./libraries/AgentMathLib.sol";
 
 /**
  * @title GameItem - Hybrid NFT Contract
@@ -105,7 +108,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     function getDynamicPrice(string memory tokenURI, uint256 basePrice) public view returns (uint256) {
         // Price based on supply of THIS specific item type
         uint256 supply = uriSupply[tokenURI];
-        return basePrice + (supply * PRICE_INCREMENT);
+        return PricingLib.dynamicPrice(basePrice, supply, PRICE_INCREMENT);
     }
 
     function mintLootboxItem(address player, string memory tokenURI, uint256 basePrice)
@@ -148,33 +151,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
 
 
 
-    function _getBaseMiningRate(string memory agentClass) internal pure returns (uint256) {
-        bytes32 classHash = keccak256(bytes(agentClass));
-        
-        if (classHash == keccak256(bytes("Warrior"))) {
-            return BASE_WARRIOR_RATE;
-        }
-        if (classHash == keccak256(bytes("Guardian"))) {
-            return BASE_GUARDIAN_RATE;
-        }
-        if (classHash == keccak256(bytes("Sorcerer"))) {
-            return BASE_SORCERER_RATE;
-        }
-        
-        return BASE_WARRIOR_RATE;
-    }
 
-    function _generateXpVariance(uint256 tokenId) internal view returns (uint256) {
-        // Use token ID and block hash for randomness
-        uint256 variance = uint256(keccak256(abi.encodePacked(
-            blockhash(block.number - 1),
-            tokenId
-        )));
-        
-        // Scale variance between 0.8x and 1.2x (80% to 120%)
-        // Result: 8e17 to 12e17
-        return 8e17 + (variance % 4e17);
-    }
 
     function mintAgent(
         address player,
@@ -197,13 +174,18 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         nftTypes[tokenId] = ItemType.AGENT;
 
         // Generate base stats
-        uint256 baseMiningRate = _getBaseMiningRate(agentClass);
+        uint256 baseMiningRate = AgentMathLib.baseMiningRate(
+            agentClass,
+            BASE_WARRIOR_RATE,
+            BASE_GUARDIAN_RATE,
+            BASE_SORCERER_RATE
+        );
         uint256 randomStrength = (uint256(keccak256(abi.encodePacked(
             block.timestamp,
             msg.sender,
             tokenId
         ))) % 50) + 1;
-        uint256 xpVariance = _generateXpVariance(tokenId);
+        uint256 xpVariance = AgentMathLib.generateXpVariance(tokenId);
 
         // Initialize agent in registry
         agentRegistry[tokenId] = AgentStats({
@@ -309,7 +291,12 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         uint256 xpGained = (baseXp * agent.xpGainVariance) / 1e18;
         
         // Determine loot using stored deterministic seed
-        (uint256 tokens, string memory rarity, string memory itemUri) = _rollQuestLoot(tokenId, agent, quest);
+        (uint256 tokens, string memory rarity, string memory itemUri) = QuestLootLib.rollQuestLoot(
+            quest.randomSeed,
+            tokenId,
+            agent.strength,
+            quest.questDuration
+        );
         
         // Award XP
         agent.experience += xpGained;
@@ -342,43 +329,12 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         uint256 baseXp = quest.questDuration / 36;
         xpGain = (baseXp * agent.xpGainVariance) / 1e18;
         
-        (tokens, rarity, itemUri) = _rollQuestLoot(tokenId, agent, quest);
-    }
-
-    function _rollQuestLoot(
-        uint256 tokenId,
-        AgentStats memory agent,
-        QuestInfo memory quest
-    ) internal pure returns (uint256 tokens, string memory rarity, string memory itemUri) {
-        // Use stored random seed from quest start - makes roll deterministic
-        uint256 roll = uint256(keccak256(abi.encodePacked(
+        (tokens, rarity, itemUri) = QuestLootLib.rollQuestLoot(
             quest.randomSeed,
             tokenId,
-            agent.strength
-        ))) % 100;
-        
-        // Scale rewards by quest duration (longer = better)
-        uint256 durationMultiplier = (quest.questDuration / 3600) + 1; // Hours + 1
-        
-        if (roll < 60) { // Common (60%)
-            rarity = "Common";
-            tokens = (5 + (roll % 15)) * 1e18 * durationMultiplier;
-            itemUri = "";
-        } else if (roll < 85) { // Uncommon (25%)
-            rarity = "Uncommon";
-            tokens = (25 + (roll % 25)) * 1e18 * durationMultiplier;
-            itemUri = roll % 3 == 0 ? "ipfs://valid-uri-1" : ""; // 33% chance for Sword
-        } else if (roll < 97) { // Rare (12%)
-            rarity = "Rare";
-            tokens = (75 + (roll % 75)) * 1e18 * durationMultiplier;
-            itemUri = roll % 2 == 0 ? "ipfs://valid-uri-1" : "ipfs://valid-uri-2"; // Sword or Shield
-        } else { // Epic (3%)
-            rarity = "Epic";
-            tokens = (200 + (roll % 100)) * 1e18 * durationMultiplier;
-            itemUri = "ipfs://valid-uri-3"; // Guaranteed Scepter
-        }
-        
-        return (tokens, rarity, itemUri);
+            agent.strength,
+            quest.questDuration
+        );
     }
 
     function _mintQuestLoot(address recipient, string memory uri) internal {

@@ -1,0 +1,39 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-7b35325443df165739483084a39eb4aa8d4e4f6e",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/libraries/PricingLib.sol": "project/contracts/libraries/PricingLib.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/libraries/PricingLib.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nlibrary PricingLib {\n    function dynamicPrice(\n        uint256 basePrice,\n        uint256 supply,\n        uint256 priceIncrement\n    ) external pure returns (uint256) {\n        return basePrice + (supply * priceIncrement);\n    }\n}\n"
+      }
+    }
+  }
+}

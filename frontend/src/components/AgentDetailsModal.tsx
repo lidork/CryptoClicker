@@ -169,7 +169,7 @@ export function AgentDetailsModal({
                   onClick={() => onPreviewRewards(selectedAgentDetails.tokenId)}
                   style={{ marginTop: '0.5rem', background: '#fbbf24', color: '#000', fontWeight: 'bold' }}
                 >
-                  👁️ Preview Rewards & Complete
+                 👁️ Preview Rewards & Complete
                 </button>
               ) : (
                 <p style={{ color: '#666', fontStyle: 'italic', margin: '0.5rem 0' }}>Quest in progress... (may take extra time according to load)</p>

@@ -1,0 +1,39 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-7e157cf91602bd84e4d107d247d3090c97bfeb42",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/libraries/AgentMathLib.sol": "project/contracts/libraries/AgentMathLib.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/libraries/AgentMathLib.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nlibrary AgentMathLib {\n    function baseMiningRate(\n        string memory agentClass,\n        uint256 baseWarrior,\n        uint256 baseGuardian,\n        uint256 baseSorcerer\n    ) external pure returns (uint256) {\n        bytes32 classHash = keccak256(bytes(agentClass));\n\n        if (classHash == keccak256(bytes(\"Warrior\"))) {\n            return baseWarrior;\n        }\n        if (classHash == keccak256(bytes(\"Guardian\"))) {\n            return baseGuardian;\n        }\n        if (classHash == keccak256(bytes(\"Sorcerer\"))) {\n            return baseSorcerer;\n        }\n\n        return baseWarrior;\n    }\n\n    function generateXpVariance(uint256 tokenId) external view returns (uint256) {\n        uint256 variance = uint256(keccak256(abi.encodePacked(\n            blockhash(block.number - 1),\n            tokenId\n        )));\n\n        return 8e17 + (variance % 4e17);\n    }\n}\n"
+      }
+    }
+  }
+}

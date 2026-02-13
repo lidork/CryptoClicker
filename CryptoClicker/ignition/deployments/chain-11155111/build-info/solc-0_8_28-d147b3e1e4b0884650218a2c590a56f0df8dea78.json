@@ -1,0 +1,39 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-d147b3e1e4b0884650218a2c590a56f0df8dea78",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/libraries/QuestLootLib.sol": "project/contracts/libraries/QuestLootLib.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/libraries/QuestLootLib.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nlibrary QuestLootLib {\n    function rollQuestLoot(\n        bytes32 randomSeed,\n        uint256 tokenId,\n        uint256 strength,\n        uint256 questDuration\n    ) external pure returns (uint256 tokens, string memory rarity, string memory itemUri) {\n        // Use stored random seed from quest start - makes roll deterministic\n        uint256 roll = uint256(keccak256(abi.encodePacked(\n            randomSeed,\n            tokenId,\n            strength\n        ))) % 100;\n\n        // Scale rewards by quest duration (longer = better)\n        uint256 durationMultiplier = (questDuration / 3600) + 1; // Hours + 1\n\n        if (roll < 60) { // Common (60%)\n            rarity = \"Common\";\n            tokens = (5 + (roll % 15)) * 1e18 * durationMultiplier;\n            itemUri = \"\";\n        } else if (roll < 85) { // Uncommon (25%)\n            rarity = \"Uncommon\";\n            tokens = (25 + (roll % 25)) * 1e18 * durationMultiplier;\n            itemUri = roll % 3 == 0 ? \"ipfs://valid-uri-1\" : \"\"; // 33% chance for Sword\n        } else if (roll < 97) { // Rare (12%)\n            rarity = \"Rare\";\n            tokens = (75 + (roll % 75)) * 1e18 * durationMultiplier;\n            itemUri = roll % 2 == 0 ? \"ipfs://valid-uri-1\" : \"ipfs://valid-uri-2\"; // Sword or Shield\n        } else { // Epic (3%)\n            rarity = \"Epic\";\n            tokens = (200 + (roll % 100)) * 1e18 * durationMultiplier;\n            itemUri = \"ipfs://valid-uri-3\"; // Guaranteed Scepter\n        }\n\n        return (tokens, rarity, itemUri);\n    }\n}\n"
+      }
+    }
+  }
+}

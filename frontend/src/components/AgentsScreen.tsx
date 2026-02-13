@@ -23,8 +23,8 @@ export function AgentsScreen({
     <div className="agents-section">
       <h2>🤖 Create Agents (ERC-8004 Identity)</h2>
       <p style={{ color: '#aaa', marginBottom: '20px' }}>
-        Agents are persistent NFTs with evolving stats. Each agent has a randomized XP gain rate that affects leveling speed.
-        Cost: {agentMintCost} CLK per agent. Choose wisely, as some agents may level up faster than others!
+        Agents are persistent, leveling NFTs with two modes: <strong>Equipped</strong> (boosts your clicking) or <strong>On Quest</strong> (earns CLK tokens). 
+        Each agent has randomized XP variance affecting leveling speed. Cost: {agentMintCost} CLK per agent.
       </p>
 
       <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -49,11 +49,14 @@ export function AgentsScreen({
               </p>
 
               <div style={{ background: '#222', padding: '10px', borderRadius: '8px', marginBottom: '10px' }}>
-                <p style={{ margin: '5px 0', fontSize: '0.85em' }}>
-                  <strong>Mining Rate:</strong> {agentClass.baseMiningRate} {agentClass.miningRateUnit}
+                <p style={{ margin: '5px 0', fontSize: '0.8em', color: '#4ade80' }}>
+                  <strong>⚡ Quest Rewards:</strong> {agentClass.baseMiningRate} CLK/sec
                 </p>
-                <p style={{ margin: '5px 0', fontSize: '0.85em' }}>
-                  <strong>In Circulation:</strong> {supply} agents
+                <p style={{ margin: '5px 0', fontSize: '0.8em', color: '#60a5fa' }}>
+                  <strong>🎯 Equipped Bonus:</strong> Scales with level
+                </p>
+                <p style={{ margin: '5px 0', fontSize: '0.8em', color: '#9ca3af' }}>
+                  <strong>📊 Supply:</strong> {supply} created
                 </p>
               </div>
 
