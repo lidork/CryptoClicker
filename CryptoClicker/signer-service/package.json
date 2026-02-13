@@ -1,0 +1,19 @@
+{
+  "name": "signer-service",
+  "version": "1.0.0",
+  "description": "Minimal validator service for Crypto Clicker anti-cheat",
+  "main": "signer.js",
+  "scripts": {
+    "start": "node signer.js",
+    "dev": "nodemon signer.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ethers": "^6.16.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

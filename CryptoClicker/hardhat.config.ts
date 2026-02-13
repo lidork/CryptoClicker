@@ -1,4 +1,4 @@
-import HardhatIgnitionEthersPlugin from "@nomicfoundation/hardhat-ignition-ethers";
+import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import { defineConfig } from "hardhat/config";
 import "dotenv/config";
 
@@ -6,7 +6,7 @@ const SEPOLIA_RPC_URL = process.env.SEPOLIA_URL || "";
 const SEPOLIA_PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 
 export default defineConfig({
-  plugins: [HardhatIgnitionEthersPlugin],
+  plugins: [hardhatToolboxMochaEthersPlugin],
   solidity: {
     profiles: {
       default: {

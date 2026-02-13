@@ -4,7 +4,7 @@ import { toast } from 'react-toastify'
 import { GameItemABI } from '../abis/contractABIs'
 import { GAME_ITEM_ADDRESS } from '../constants'
 import { JsonRpcSigner } from 'ethers'
-import type { InventoryItem, ItemHistoryRecord, ItemMetadata, AgentDetails, AgentClassConfig } from '../types'
+import type { InventoryItem, ItemHistoryRecord, ItemMetadata, AgentDetails, AgentClassConfig, AgentHistoryEvent } from '../types'
 
 export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress: string | null) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
@@ -15,6 +15,8 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
   const [selectedAgentDetails, setSelectedAgentDetails] = useState<AgentDetails | null>(null)
   const [agentBeingViewed, setAgentBeingViewed] = useState<string | null>(null)
   const [agentSupplies, setAgentSupplies] = useState<Record<string, number>>({})
+  const [agentHistory, setAgentHistory] = useState<AgentHistoryEvent[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const fetchInventory = useCallback(async () => {
     if (signer && userAddress) {
@@ -22,8 +24,6 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
         const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
         const filter = gameItemContract.filters.Transfer(null, userAddress)
         const events = await gameItemContract.queryFilter(filter, 0)
-        
-        console.log(`Found ${events.length} transfer events for ${userAddress}`)
         
         const loadedInventory = await Promise.all(events.map(async (event) => {
           try {
@@ -43,12 +43,10 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
               }
               
               const isAgent = Number(nftType) === 1
-              console.log(`Token ${tokenId}: isAgent=${isAgent}, nftType=${nftType}`)
               
               if (isAgent) {
                 try {
                   const stats = await gameItemContract.getAgentStats(tokenId)
-                  console.log(`Agent ${tokenId}: class=${stats.agentClass}, level=${stats.level}`)
                   
                   return {
                     id: tokenId.toString(),
@@ -94,7 +92,6 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
         })
         
         const inventoryArray = Array.from(uniqueItemsMap.values())
-        console.log(`Loaded inventory: ${inventoryArray.length} items total`, inventoryArray)
         setInventory(inventoryArray)
       } catch (e) {
         console.error("Error fetching inventory:", e)
@@ -107,17 +104,9 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     try {
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
       
-      let history: ItemHistoryRecord[] = []
-      try {
-        const rawHistory = await gameItemContract.getItemHistory(tokenId)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        history = rawHistory.map((record: any) => ({
-          from: record.from,
-          to: record.to
-        }))
-      } catch(e) { 
-        console.warn("Could not fetch history", e) 
-      }
+      // Note: getItemHistory is in ABI but not implemented in current contract
+      // Silently default to empty history
+      const history: ItemHistoryRecord[] = []
       setSelectedItemHistory(history)
 
       let meta = { purchasePrice: 0, mintDate: 0, originalCreator: "Unknown", strength: 0 }
@@ -160,6 +149,7 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
       })
       setAgentBeingViewed(tokenId)
 
+      // Agents don't have transfer history in current implementation
       const normalizedHistory: ItemHistoryRecord[] = []
       setSelectedItemHistory(normalizedHistory)
     } catch (e) {
@@ -168,22 +158,129 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     }
   }, [signer])
 
-  const fetchAgentSupplies = useCallback(async (agentClasses: AgentClassConfig[]) => {
+  const fetchAgentHistory = useCallback(async (tokenId: string) => {
     if (!signer) return
+    setIsLoadingHistory(true)
     try {
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
-      const supplies: Record<string, number> = {}
+      const tokenIdBigInt = BigInt(tokenId)
       
-      for (const agentClass of agentClasses) {
-        const supply = await gameItemContract.getAgentSupplyByClass(agentClass.name)
-        supplies[agentClass.name] = Number(supply)
+      // Query all agent-related events for this tokenId
+      const [createdEvents, levelUpEvents, xpGainEvents, questSentEvents, questReturnEvents] = await Promise.all([
+        gameItemContract.queryFilter(gameItemContract.filters.AgentCreated(tokenIdBigInt), 0),
+        gameItemContract.queryFilter(gameItemContract.filters.AgentLeveledUp(tokenIdBigInt), 0),
+        gameItemContract.queryFilter(gameItemContract.filters.ExperienceGained(tokenIdBigInt), 0),
+        gameItemContract.queryFilter(gameItemContract.filters.AgentSentOnQuest(tokenIdBigInt), 0),
+        gameItemContract.queryFilter(gameItemContract.filters.AgentReturnedFromQuest(tokenIdBigInt), 0),
+      ])
+
+      const allEvents: AgentHistoryEvent[] = []
+
+      // Parse created events
+      for (const event of createdEvents) {
+        const block = await event.getBlock()
+        allEvents.push({
+          type: 'created',
+          timestamp: block.timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          data: {}
+        })
       }
-      
-      setAgentSupplies(supplies)
+
+      // Parse level up events
+      for (const event of levelUpEvents) {
+        const block = await event.getBlock()
+        // @ts-expect-error Ethers v6 args
+        const [, newLevel, newMiningRate] = event.args
+        allEvents.push({
+          type: 'levelUp',
+          timestamp: block.timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          data: {
+            level: Number(newLevel),
+            newMiningRate: Number(newMiningRate)
+          }
+        })
+      }
+
+      // Parse XP gain events
+      for (const event of xpGainEvents) {
+        const block = await event.getBlock()
+        // @ts-expect-error Ethers v6 args
+        const [, xpAmount, totalExperience] = event.args
+        allEvents.push({
+          type: 'xpGain',
+          timestamp: block.timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          data: {
+            xpAmount: Number(xpAmount),
+            totalExperience: Number(totalExperience)
+          }
+        })
+      }
+
+      // Parse quest sent events
+      for (const event of questSentEvents) {
+        const block = await event.getBlock()
+        // @ts-expect-error Ethers v6 args
+        const [, , duration] = event.args
+        allEvents.push({
+          type: 'questStarted',
+          timestamp: block.timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          data: {
+            duration: Number(duration)
+          }
+        })
+      }
+
+      // Parse quest return events
+      for (const event of questReturnEvents) {
+        const block = await event.getBlock()
+        // @ts-expect-error Ethers v6 args
+        const [, , xpGained, tokensEarned, lootRarity] = event.args
+        allEvents.push({
+          type: 'questCompleted',
+          timestamp: block.timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          data: {
+            xpAmount: Number(xpGained),
+            tokensEarned: Number(tokensEarned),
+            lootRarity: String(lootRarity)
+          }
+        })
+      }
+
+      // Sort by block number (chronological order)
+      allEvents.sort((a, b) => a.blockNumber - b.blockNumber)
+      setAgentHistory(allEvents)
     } catch (e) {
-      console.warn("Error fetching agent supplies:", e)
+      console.error("Error fetching agent history:", e)
+      toast.error("Failed to load agent history")
+    } finally {
+      setIsLoadingHistory(false)
     }
   }, [signer])
+
+  const fetchAgentSupplies = useCallback((agentClasses: AgentClassConfig[]) => {
+    // Calculate agent supplies from inventory data (client-side)
+    // No contract call needed - prevents issues with non-existent contract function
+    const supplies: Record<string, number> = {}
+    
+    for (const agentClass of agentClasses) {
+      const count = inventory.filter(item => 
+        item.isAgent && item.agentClass === agentClass.name
+      ).length
+      supplies[agentClass.name] = count
+    }
+    
+    setAgentSupplies(supplies)
+  }, [inventory])
 
   const transferItem = useCallback(async (selectedTokenId: string) => {
     if (!signer || !userAddress) return
@@ -234,6 +331,8 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     selectedAgentDetails,
     agentBeingViewed,
     agentSupplies,
+    agentHistory,
+    isLoadingHistory,
     setSelectedTokenId,
     setAgentBeingViewed,
     setTransferTarget,
@@ -241,6 +340,7 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     fetchItemDetails,
     fetchAgentDetails,
     fetchAgentSupplies,
+    fetchAgentHistory,
     transferItem
   }
 }

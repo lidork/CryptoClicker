@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { QUEST_DURATIONS } from '../constants';
-import type { AgentDetails, ItemHistoryRecord } from '../types';
+import type { AgentDetails, ItemHistoryRecord, AgentHistoryEvent } from '../types';
 
 interface AgentDetailsModalProps {
   selectedAgentDetails: AgentDetails;
   selectedItemHistory: ItemHistoryRecord[];
+  agentHistory: AgentHistoryEvent[];
+  isLoadingHistory: boolean;
   userAddress: string | null;
   getAgentSkills: (agentClass: string, level: number) => string[];
   onClose: () => void;
+  onLoadHistory: (tokenId: string) => void;
   isOnQuest: boolean;
   questEndTime?: number;
   questDuration?: number;
@@ -22,9 +25,12 @@ interface AgentDetailsModalProps {
 export function AgentDetailsModal({
   selectedAgentDetails,
   selectedItemHistory,
+  agentHistory,
+  isLoadingHistory,
   userAddress,
   getAgentSkills,
   onClose,
+  onLoadHistory,
   isOnQuest,
   questEndTime,
   questDuration,
@@ -36,6 +42,13 @@ export function AgentDetailsModal({
   onPreviewRewards
 }: AgentDetailsModalProps) {
   const [currentTime, setCurrentTime] = useState(() => Math.floor(Date.now() / 1000));
+  
+  // Load history when modal opens
+  useEffect(() => {
+    if (selectedAgentDetails.tokenId) {
+      onLoadHistory(selectedAgentDetails.tokenId);
+    }
+  }, [selectedAgentDetails.tokenId, onLoadHistory]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -223,6 +236,74 @@ export function AgentDetailsModal({
           )}
         </div>
 
+        {/* Agent History Section */}
+        <div style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
+          <h4 style={{ marginTop: 0, marginBottom: '0.5rem', color: '#7dd3fc' }}>📜 Agent Passport - Activity Log</h4>
+          <div style={{ background: '#111', padding: '12px', borderRadius: '8px', maxHeight: '250px', overflowY: 'auto' }}>
+            {isLoadingHistory ? (
+              <p style={{ color: '#aaa', fontStyle: 'italic', margin: 0 }}>Loading history...</p>
+            ) : agentHistory.length === 0 ? (
+              <p style={{ color: '#666', fontStyle: 'italic', margin: 0 }}>No events yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {agentHistory.map((event, idx) => {
+                  const eventDate = new Date(event.timestamp * 1000);
+                  const timeAgo = getTimeAgo(event.timestamp);
+                  
+                  return (
+                    <div 
+                      key={`${event.transactionHash}-${idx}`}
+                      style={{ 
+                        background: '#1a1a1a', 
+                        padding: '10px', 
+                        borderRadius: '6px',
+                        borderLeft: '3px solid ' + getEventColor(event.type)
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '1.1em' }}>{getEventIcon(event.type)} {getEventTitle(event)}</span>
+                        <span style={{ fontSize: '0.75em', color: '#666' }}>{timeAgo}</span>
+                      </div>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '0.85em', color: '#aaa' }}>
+                        {eventDate.toLocaleString()}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          
+          {/* Reputation Metrics */}
+          {agentHistory.length > 0 && (
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(3, 1fr)', 
+              gap: '8px', 
+              marginTop: '12px' 
+            }}>
+              <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', color: '#4ade80' }}>
+                  {agentHistory.filter(e => e.type === 'questCompleted').length}
+                </div>
+                <div style={{ fontSize: '0.75em', color: '#aaa' }}>Quests</div>
+              </div>
+              <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', color: '#7dd3fc' }}>
+                  {agentHistory.filter(e => e.type === 'levelUp').length}
+                </div>
+                <div style={{ fontSize: '0.75em', color: '#aaa' }}>Level Ups</div>
+              </div>
+              <div style={{ background: '#1a1a1a', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', color: '#a78bfa' }}>
+                  {Math.ceil((currentTime - selectedAgentDetails.creationTime) / 86400)}
+                </div>
+                <div style={{ fontSize: '0.75em', color: '#aaa' }}>Days Old</div>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
           <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Transfer History</h4>
           <div style={{ maxHeight: '100px', overflowY: 'auto', background: '#111', padding: '12px', borderRadius: '8px' }}>
@@ -245,4 +326,47 @@ export function AgentDetailsModal({
       </div>
     </>
   );
+}
+
+// Helper functions for event display
+function getEventIcon(type: AgentHistoryEvent['type']): string {
+  switch (type) {
+    case 'created': return '🎉';
+    case 'levelUp': return '⬆️';
+    case 'xpGain': return '✨';
+    case 'questStarted': return '🏃';
+    case 'questCompleted': return '🏆';
+    default: return '📝';
+  }
+}
+
+function getEventColor(type: AgentHistoryEvent['type']): string {
+  switch (type) {
+    case 'created': return '#646cff';
+    case 'levelUp': return '#7dd3fc';
+    case 'xpGain': return '#fbbf24';
+    case 'questStarted': return '#a78bfa';
+    case 'questCompleted': return '#4ade80';
+    default: return '#666';
+  }
+}
+
+function getEventTitle(event: AgentHistoryEvent): string {
+  switch (event.type) {
+    case 'created': return 'Agent Created';
+    case 'levelUp': return `Leveled up to ${event.data.level}`;
+    case 'xpGain': return `Gained ${event.data.xpAmount} XP`;
+    case 'questStarted': return 'Quest Started';
+    case 'questCompleted': 
+      return `Quest Complete (+${event.data.xpAmount} XP, ${(Number(event.data.tokensEarned || 0) / 1e18).toFixed(2)} CLK)`;
+    default: return 'Event';
+  }
+}
+
+function getTimeAgo(timestamp: number): string {
+  const seconds = Math.floor(Date.now() / 1000 - timestamp);
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }

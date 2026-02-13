@@ -16,7 +16,7 @@ export function useAgentCreation(signer: JsonRpcSigner | null, userAddress: stri
     agentClass: string,
     fetchBalance: () => Promise<void>,
     fetchInventory: () => Promise<void>,
-    fetchAgentSupplies: (classes: AgentClassConfig[]) => Promise<void>,
+    fetchAgentSupplies: (classes: AgentClassConfig[]) => void,
     agentClasses: AgentClassConfig[]
   ) => {
     if (!signer || !userAddress) {

@@ -79,6 +79,11 @@ export function useShopPurchasing(signer: JsonRpcSigner | null, userAddress: str
           const iface = gameItemContract.interface
           for (const log of receipt.logs) {
             try {
+              // Only try to parse logs from our contract address
+              if (log.address.toLowerCase() !== GAME_ITEM_ADDRESS.toLowerCase()) {
+                continue
+              }
+              
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const parsed = iface.parseLog(log as any)
               if (parsed && parsed.name === 'Transfer') {
@@ -95,8 +100,8 @@ export function useShopPurchasing(signer: JsonRpcSigner | null, userAddress: str
                 }
               }
             } catch (parseErr) {
-              // Log parsing failed, continue
-              console.warn('Failed to parse log:', parseErr)
+                log.warn("Log did not match ABI, skipping:", parseErr)
+              // Silently skip logs that don't match our ABI (e.g., other contract events)
             }
           }
         }

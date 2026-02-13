@@ -58,3 +58,19 @@ export interface QuestInfo {
   duration: number;
   isComplete: boolean;
 }
+
+export interface AgentHistoryEvent {
+  type: 'created' | 'levelUp' | 'xpGain' | 'questStarted' | 'questCompleted';
+  timestamp: number;
+  blockNumber: number;
+  transactionHash: string;
+  data: {
+    level?: number;
+    newMiningRate?: number;
+    xpAmount?: number;
+    totalExperience?: number;
+    duration?: number;
+    tokensEarned?: number;
+    lootRarity?: string;
+  };
+}

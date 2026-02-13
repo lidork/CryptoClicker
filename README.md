@@ -47,8 +47,8 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 
 ### Phase 3: ERC-8004 "Lite" Implementation (Identity & Validation)
 - [x] **Smart Contract - Agent Identity**: Refactor `GameItem.sol` to store "Agent Stats" (Level, Mining Rate, Creation Time) in a struct mapping, acting as a basic **Identity Registry**.
-- [ ] **Smart Contract - Validator Logic**: Implement `ECDSA` signature verification in `GameToken.sol` to ensure only the authorized server can approve reward claims (Anti-Cheat / **Validation Registry** concept).
-- [ ] **Backend - Signer Service**: Create a simple API endpoint (e.g., Next.js API route or Express) that validates game logic (clicks) and returns a cryptographic signature for the transaction.
+- [x] **Smart Contract - Validator Logic**: Implement `ECDSA` signature verification in `GameToken.sol` to ensure only the authorized server can approve reward claims (Anti-Cheat / **Validation Registry** concept).
+- [x] **Backend - Signer Service**: Create a simple API endpoint (e.g., Next.js API route or Express) that validates game logic (clicks) and returns a cryptographic signature for the transaction.
 - [x] **Frontend - Agent Passport**: Update the UI to display the NFT not just as an image, but as an "Agent" with visible stats and a history log (Reputation).
 
 ### Phase 4: Advanced Smart Contract Features
@@ -105,7 +105,26 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
     export const GAME_ITEM_ADDRESS = "0xYourDeployedItemAddress";
     ```
 
-5.  **Run the Game:**
+5.  **Set Up Signer Service (ERC-8004 Validator):**
+    The signer service validates gameplay and signs token mint requests.
+    
+    ```bash
+    cd CryptoClicker/signer-service
+    npm install
+    npm start
+    ```
+    
+    The service will run on `http://localhost:3001`.
+    
+    **Important**: Update the validator address in your deployed `ClickerToken` contract:
+    ```bash
+    # Call setValidator() with the validator address shown in signer service logs
+    # Validator Address: 0xc94EdD970dff7fFb3f500969d15632EF1E5Bb2ab
+    ```
+    
+    See [CryptoClicker/signer-service/README.md](CryptoClicker/signer-service/README.md) for more details.
+
+6.  **Run the Game:**
     ```bash
     cd frontend
     npm run dev

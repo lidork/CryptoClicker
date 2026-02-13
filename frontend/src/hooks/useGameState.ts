@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Contract, parseEther } from 'ethers'
+import { Contract } from 'ethers'
 import { toast } from 'react-toastify'
 import { ClickerTokenABI } from '../abis/contractABIs'
-import { CLICKER_TOKEN_ADDRESS, CLICKS_PER_TOKEN } from '../constants'
+import { CLICKER_TOKEN_ADDRESS, CLICKS_PER_TOKEN, SIGNER_API_URL } from '../constants'
 import { JsonRpcSigner } from 'ethers'
 import type { InventoryItem, QuestInfo } from '../types'
 
-export function useGameState(signer: JsonRpcSigner | null, userAddress: string | null, inventory: InventoryItem[], equippedAgentId: string | null, questingAgents: Record<string, QuestInfo>) {
+export function useGameState(signer: JsonRpcSigner | null, userAddress: string | null, inventory: InventoryItem[], equippedAgentId: string | null, questingAgents: Record<string, QuestInfo>, fetchBalance?: () => Promise<void>) {
   const [clickCount, setClickCount] = useState(0)
   const [unclaimedClicks, setUnclaimedClicks] = useState(0)
   const [clickMultiplier, setClickMultiplier] = useState(1)
@@ -86,10 +86,35 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
 
     try {
       const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer)
-      const amount = parseEther(tokensToMint.toString())
+      
+      // PHASE 3: Get current nonce for the user
+      console.log("Fetching nonce for user:", userAddress)
+      const nonce = await tokenContract.getNonce(userAddress)
+      console.log("Current nonce:", nonce.toString())
+
+      // PHASE 3: Request signature from backend validator (ERC-8004 Validation Registry)
+      console.log("Requesting signature from validator service...")
+      const signResponse = await fetch(`${SIGNER_API_URL}/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userAddress,
+          clickCount: unclaimedClicks,
+          nonce: Number(nonce)
+        })
+      })
+
+      if (!signResponse.ok) {
+        const error = await signResponse.json()
+        throw new Error(error.error || 'Failed to get signature from validator')
+      }
+
+      const { signature, amount: validatedAmount } = await signResponse.json()
+      console.log("Signature obtained from validator:", signature)
       
       const txPromise = async () => {
-        const tx = await tokenContract.mint(userAddress, amount)
+        // PHASE 3: Pass signature and nonce to mint function (using validated amount from backend)
+        const tx = await tokenContract.mint(userAddress, validatedAmount, signature, nonce)
         console.log("Payout transaction sent:", tx.hash)
         return await tx.wait()
       }
@@ -97,20 +122,39 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
       await toast.promise(
         txPromise(),
         {
-          pending: `Minting ${tokensToMint} tokens...`,
-          success: `Successfully minted ${tokensToMint} tokens!`,
+          pending: `Minting ${tokensToMint} tokens with signature validation...`,
+          success: `✅ Successfully minted ${tokensToMint} tokens! Signature verified on-chain.`,
           error: 'Transaction failed'
         }
       )
       
       setUnclaimedClicks((prev) => prev - (tokensToMint * CLICKS_PER_TOKEN))
+      
+      // Refresh balance after successful mint
+      if (fetchBalance) {
+        await fetchBalance()
+      }
     } catch (e: unknown) {
       console.error("Payout failed:", e)
-      toast.error(`Payout failed: ${e instanceof Error ? e.message : 'Transaction failed'}`)
+      if (e instanceof Error) {
+        if (e.message.includes('Invalid signature')) {
+          toast.error('Signature validation failed: Not signed by authorized validator')
+        } else if (e.message.includes('Invalid nonce')) {
+          toast.error('Nonce mismatch: Please try again')
+        } else if (e.message.includes('Cooldown') || e.message.includes('wait')) {
+          toast.error('⏰ Please wait 1 minute between mints')
+        } else if (e.message.includes('user rejected') || e.message.includes('User denied')) {
+          toast.error('Transaction cancelled')
+        } else {
+          toast.error(`Payout failed: ${e.message}`)
+        }
+      } else {
+        toast.error('Transaction failed')
+      }
     } finally {
       setIsPayoutProcessing(false)
     }
-  }, [signer, userAddress, unclaimedClicks])
+  }, [signer, userAddress, unclaimedClicks, fetchBalance])
 
   return {
     clickCount,

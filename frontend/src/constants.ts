@@ -1,5 +1,9 @@
-export const CLICKER_TOKEN_ADDRESS = "0xf04A3569C011D7DFD9caB3Bd31B6EF219e1d568d";
-export const GAME_ITEM_ADDRESS = "0x1bAe190FCA1A82d4c20Ed14dce66e8005610Ccb6";
+export const CLICKER_TOKEN_ADDRESS = "0x6aEaD5AFA0293d3251dC07152150862695e29622";
+export const GAME_ITEM_ADDRESS = "0xB34572c303414Cc97f4D062d1812Ca63f6fFfc56";
+
+// Signer Service API (ERC-8004 Validator)
+export const SIGNER_API_URL = import.meta.env.VITE_SIGNER_API || 'http://localhost:3001';
+export const VALIDATOR_ADDRESS = "0xc94EdD970dff7fFb3f500969d15632EF1E5Bb2ab";
 
 export const CLICKS_PER_TOKEN = 10; // How many clicks to earn 1 token
 
@@ -17,21 +21,21 @@ export const AGENT_CLASSES = [
         description: "Strong attacker. +5% click bonus per level when equipped. Low mining rate (0.5 CLK/sec on quests).",
         emoji: "⚔️",
         baseMiningRate: 0.5,
-        miningRateUnit: "CLK/sec"
+        miningRateUnit: "Click/sec"
     },
     {
         name: "Guardian",
         description: "Balanced defender. +10% passive income per level when equipped. Standard mining (1 CLK/sec on quests).",
         emoji: "🛡️",
         baseMiningRate: 1,
-        miningRateUnit: "CLK/sec"
+        miningRateUnit: "Click/sec"
     },
     {
         name: "Sorcerer",
         description: "Powerful caster. +2% click & +8% passive per level when equipped. Fast mining (2 CLK/sec on quests).",
         emoji: "🔮",
         baseMiningRate: 2,
-        miningRateUnit: "CLK/sec"
+        miningRateUnit: "Click/sec"
     }
 ];
 

@@ -38,22 +38,16 @@ function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [tokenBalance, setTokenBalance] = useState("0")
   const [equippedAgentId, setEquippedAgentId] = useState<string | null>(null)
+  
+  // Validator information for debug menu
+  const [validatorAddress, setValidatorAddress] = useState<string | null>(null)
+  const [userNonce, setUserNonce] = useState<number>(0)
 
   // Custom hooks for major game systems
   const inventoryMgmt = useInventoryManagement(signer, userAddress)
   const shopPurchasing = useShopPurchasing(signer, userAddress, tokenBalance)
   const questSystem = useQuestSystem(signer, userAddress, inventoryMgmt.inventory, equippedAgentId, setEquippedAgentId)
   const agentCreation = useAgentCreation(signer, userAddress, tokenBalance)
-
-  // Game state with actual inventory for bonus calculations
-  const gameStateUpdated = useGameState(
-    signer,
-    userAddress,
-    inventoryMgmt.inventory,
-    equippedAgentId,
-    questSystem.questingAgents
-  )
-
 
   const handleConnect = useCallback((_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
     setSigner(newSigner)
@@ -77,18 +71,34 @@ function App() {
       } catch {
         console.log("Contract not deployed or address incorrect")
       }
-      inventoryMgmt.fetchInventory()
     }
-  }, [signer, userAddress, inventoryMgmt])
+  }, [signer, userAddress])
+
+  // Game state with actual inventory for bonus calculations
+  const gameStateUpdated = useGameState(
+    signer,
+    userAddress,
+    inventoryMgmt.inventory,
+    equippedAgentId,
+    questSystem.questingAgents,
+    fetchBalance
+  )
 
   // Fetch initial data when user connects
   useEffect(() => {
     if (userAddress) {
       fetchBalance()
       shopPurchasing.fetchShopPrices()
-      inventoryMgmt.fetchAgentSupplies(AGENT_CLASSES)
+      inventoryMgmt.fetchInventory()
     }
-  }, [userAddress, fetchBalance, shopPurchasing, inventoryMgmt])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userAddress])
+
+  // Update agent supplies when inventory changes
+  useEffect(() => {
+    inventoryMgmt.fetchAgentSupplies(AGENT_CLASSES)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventoryMgmt.inventory])
 
   // Listen for account changes
   useEffect(() => {
@@ -107,13 +117,57 @@ function App() {
     }
   }, [handleDisconnect])
 
-  const toggleDebug = () => {
+  // Listen for NFT Transfer events to update inventory automatically
+  useEffect(() => {
+    if (!signer || !userAddress) return
+
+    const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
+    
+    // Listen for transfers TO this user
+    const filterTo = gameItemContract.filters.Transfer(null, userAddress)
+    // Listen for transfers FROM this user
+    const filterFrom = gameItemContract.filters.Transfer(userAddress, null)
+
+    const handleTransfer = () => {
+      console.log("NFT Transfer event detected, refreshing inventory...")
+      inventoryMgmt.fetchInventory()
+    }
+
+    gameItemContract.on(filterTo, handleTransfer)
+    gameItemContract.on(filterFrom, handleTransfer)
+
+    return () => {
+      gameItemContract.off(filterTo, handleTransfer)
+      gameItemContract.off(filterFrom, handleTransfer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signer, userAddress])
+
+  const toggleDebug = async () => {
     const code = prompt("Enter Debug Code:")
     if (code === import.meta.env.VITE_DEBUG_CODE) {
       setShowDebug(true)
       toast.success("Debug Mode Activated! 🛠️")
+      // PHASE 3: Fetch validator info when debug menu opens
+      await fetchValidatorInfo()
     } else if (code) {
       toast.error("Invalid Code")
+    }
+  }
+
+  // PHASE 3: Fetch validator address and user nonce
+  const fetchValidatorInfo = async () => {
+    if (!signer || !userAddress) return
+    try {
+      const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer)
+      const validator = await tokenContract.validator()
+      const nonce = await tokenContract.getNonce(userAddress)
+      setValidatorAddress(validator)
+      setUserNonce(Number(nonce))
+      console.log("Validator:", validator)
+      console.log("User Nonce:", nonce.toString())
+    } catch (e) {
+      console.error("Failed to fetch validator info:", e)
     }
   }
 
@@ -296,13 +350,31 @@ function App() {
             position: 'fixed', bottom: '10px', left: '10px', 
             background: 'rgba(50,0,0,0.9)', padding: '15px', 
             border: '1px solid red', borderRadius: '8px', zIndex: 2000,
-            maxWidth: '250px'
+            maxWidth: '300px'
           }}>
             <h3 style={{margin: '0 0 10px 0', color: 'red'}}>🛠️ Debug Menu</h3>
+            
+            {/* PHASE 3: Validator Information */}
+            <div style={{marginBottom: '10px', fontSize: '11px', color: '#aaa', borderBottom: '1px solid #555', paddingBottom: '8px'}}>
+              <div style={{marginBottom: '3px'}}>
+                <strong style={{color: '#ff6b6b'}}>🔐 Validator:</strong>
+                <div style={{fontFamily: 'monospace', fontSize: '10px', wordBreak: 'break-all'}}>
+                  {validatorAddress ? `${validatorAddress.slice(0,6)}...${validatorAddress.slice(-4)}` : 'Loading...'}
+                </div>
+              </div>
+              <div>
+                <strong style={{color: '#ff6b6b'}}>🔢 Your Nonce:</strong> {userNonce}
+              </div>
+              <div style={{marginTop: '5px', fontSize: '10px', fontStyle: 'italic', color: '#888'}}>
+                ✓ Signature validation active
+              </div>
+            </div>
+
             <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
               <button onClick={debugMintTokens}>Give 500 Tokens (Owner)</button>
               <button onClick={debugResetClicks}>Set 100 Free Clicks</button>
               <button onClick={debugSendQuickQuest}>Send Agent on 1min Quest</button>
+              <button onClick={fetchValidatorInfo}>🔄 Refresh Validator Info</button>
               <button onClick={() => setShowDebug(false)}>Close Menu</button>
             </div>
           </div>
@@ -398,9 +470,12 @@ function App() {
           <AgentDetailsModal
             selectedAgentDetails={inventoryMgmt.selectedAgentDetails}
             selectedItemHistory={inventoryMgmt.selectedItemHistory}
+            agentHistory={inventoryMgmt.agentHistory}
+            isLoadingHistory={inventoryMgmt.isLoadingHistory}
             userAddress={userAddress}
             getAgentSkills={getAgentSkills}
             onClose={() => inventoryMgmt.setAgentBeingViewed(null)}
+            onLoadHistory={inventoryMgmt.fetchAgentHistory}
             isOnQuest={!!questSystem.questingAgents[inventoryMgmt.agentBeingViewed]}
             questEndTime={questSystem.questingAgents[inventoryMgmt.agentBeingViewed]?.endTime}
             questDuration={questSystem.questingAgents[inventoryMgmt.agentBeingViewed]?.duration}

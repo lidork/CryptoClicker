@@ -9,10 +9,20 @@ export const ClickerTokenABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
   "function transferFrom(address from, address to, uint256 amount) returns (bool)",
 
-  "function mint(address to, uint256 amount) public",
+  // PHASE 3: Updated mint function with ECDSA signature validation
+  "function mint(address to, uint256 amount, bytes signature, uint256 nonce) public",
   "function ownerMint(address to, uint256 amount) public", // Owner-only minting function
+  
+  // PHASE 3: Validator management and nonce tracking
+  "function validator() view returns (address)",
+  "function getNonce(address user) view returns (uint256)",
+  "function setValidator(address newValidator) external",
+  "function nonces(address user) view returns (uint256)",
+  
   "event Transfer(address indexed from, address indexed to, uint256 value)",
-  "event Approval(address indexed owner, address indexed spender, uint256 value)"
+  "event Approval(address indexed owner, address indexed spender, uint256 value)",
+  "event ValidatorUpdated(address indexed oldValidator, address indexed newValidator)",
+  "event MintValidated(address indexed user, uint256 amount, uint256 nonce)"
 ];
 
 export const GameItemABI = [
@@ -51,9 +61,6 @@ export const GameItemABI = [
   "function completeQuest(uint256 tokenId) external",
   "function getQuestStatus(uint256 tokenId) view returns (bool isOnQuest, uint256 remainingTime, uint256 questEndTime)",
   "function previewQuestRewards(uint256 tokenId) view returns (uint256 tokens, string rarity, string itemUri, uint256 xpGain)",
-  
-  // History & Provenance
-  "function getItemHistory(uint256 tokenId) view returns (tuple(address from, address to, uint256 timestamp)[])",
   
   // Constants (readable)
   "function PRICE_INCREMENT() view returns (uint256)",
