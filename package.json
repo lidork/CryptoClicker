@@ -1,8 +1,0 @@
-{
-  "devDependencies": {
-    "dotenv": "^17.2.4"
-  },
-  "dependencies": {
-    "react-toastify": "^11.0.5"
-  }
-}

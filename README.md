@@ -17,25 +17,34 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
     -   **Shield of Holding**: Generates passive income (1 click/sec).
     -   **Crown of the Click King**: Massive multiplier bonus (+100).
 -   **Asset Provenance**: Full history tracking for Game Items. View the original mint date, creator, and every past owner directly in the inventory UI.
--   **Transfer System**: definitive ownership allows players to transfer items to other wallets, carrying their game bonuses with them.
+-   **Transfer System**: Definitive ownership allows players to transfer items to other wallets, carrying their game bonuses with them.
 -   **Smart Contract Security**: Built-in cooldowns, transaction caps, and reentrancy guards to ensure fair play.
+-   **Agent System**: Create and manage agents with stats, leveling, experience, and quests. View full agent history and reputation metrics.
+-   **Validator Service**: Backend anti-cheat system using ECDSA signatures for secure token minting.
 
 ## 3. Tech Used
 **Frontend:**
--   React
+-   React v19.2.0
 -   TypeScript
 -   Vite
 -   Ethers.js (v6)
 -   CSS Modules
+-   React-Toastify (notifications)
+
+**Backend:**
+-   Express.js v4.18.2
+-   Node.js
+-   ECDSA signature generation
+-   Nonce-based replay protection
 
 **Blockchain & Smart Contracts:**
--   Solidity (v0.8.20+)
+-   Solidity (v0.8.28)
 -   Hardhat (Development Environment)
 -   Hardhat Ignition (Deployment System)
--   OpenZeppelin Contracts (ERC20, ERC721, Ownable, ReentrancyGuard)
+-   OpenZeppelin Contracts (ERC20, ERC721, ECDSA, MessageHashUtils)
 -   Sepolia Testnet (Target Network)
 
-## 4. TODO
+## 4. Implementation Status
 
 ### Phase 1: Easy Improvements (UI/UX)
 - [x] **Error Notifications**: Replace browser `alert()` calls with a toast notification library (e.g., `react-toastify`) for better user experience.
@@ -56,10 +65,6 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 - [ ] **Gasless Transactions**: Implement meta-transactions (EIP-2771) so users don't need Sepolia ETH to click/claim (pay gas via relayer).
 - [ ] **Marketplace**: Build a native marketplace contract where users can list items for sale for `CLK` tokens (instead of just transferring them). 
 - [ ] **Owner Payout** Build the infrastructure for the owner of the contracts to get paid back in `CLK` staked/used.
-
-### Phase 5: Production Readiness
-- [ ] **IPFS Integration**: Move NFT metadata (images/JSON) to real IPFS storage (Pinata/NFT.Storage) instead of hardcoded strings or local placeholders.
-- [ ] **Verification**: Verify smart contract source code on Etherscan for transparency.
 
 ## 5. Installation and Usage
 
