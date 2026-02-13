@@ -1,5 +1,5 @@
-export const CLICKER_TOKEN_ADDRESS = "0xf36c9e3931BCEc7D2163297d41bea997b22F2C73";
-export const GAME_ITEM_ADDRESS = "0xda28c7912b351a517C8C8bf6969Dfae126250D9a";
+export const CLICKER_TOKEN_ADDRESS = "0xC73836e11f70b55316400882345E8DFFcd2A439D";
+export const GAME_ITEM_ADDRESS = "0x3de7D8030343F1689E630A1064F4ABCd4A7170f3";
 
 export const CLICKS_PER_TOKEN = 10; // How many clicks to earn 1 token
 
@@ -36,3 +36,18 @@ export const AGENT_CLASSES = [
 ];
 
 export const AGENT_MINT_COST = 500; // CLK tokens to create an agent
+
+// Quest system
+export const QUEST_DURATIONS = {
+  SHORT: { seconds: 3600, label: "1 Hour", multiplier: 1 },
+  MEDIUM: { seconds: 21600, label: "6 Hours", multiplier: 3 },
+  LONG: { seconds: 86400, label: "24 Hours", multiplier: 8 },
+  DEBUG: { seconds: 60, label: "1 Minute (Debug)", multiplier: 0.1 }
+};
+
+export const LOOT_RARITIES = {
+  COMMON: { chance: 60, color: "#9ca3af", label: "Common" },
+  UNCOMMON: { chance: 25, color: "#4ade80", label: "Uncommon" },
+  RARE: { chance: 12, color: "#3b82f6", label: "Rare" },
+  EPIC: { chance: 3, color: "#a855f7", label: "Epic" }
+};

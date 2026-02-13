@@ -35,24 +35,22 @@ export const GameItemABI = [
   "function getDynamicPrice(string tokenURI, uint256 basePrice) view returns (uint256)",
   "function uriSupply(string tokenURI) view returns (uint256)",
   
-  // Lootbox Item Minting & Queries
+  // Lootbox Item Minting
   "function mintLootboxItem(address player, string tokenURI, uint256 basePrice) external returns (uint256)",
-  "function getItemMetadata(uint256 tokenId) view returns (tuple(uint256 purchasePrice, uint256 mintDate, address originalCreator, uint256 strength))",
   "function items(uint256 tokenId) view returns (uint256 purchasePrice, uint256 mintDate, address originalCreator, uint256 strength)",
   
   // Agent NFT Minting & Queries (ERC-8004)
   "function mintAgent(address player, string agentClass, string tokenURI) external returns (uint256)",
   "function getAgentStats(uint256 tokenId) view returns (tuple(uint256 level, uint256 miningRate, uint256 creationTime, uint256 experience, uint256 strength, string agentClass, uint256 xpGainVariance))",
-  "function getAgentLevel(uint256 tokenId) view returns (uint256)",
-  "function getAgentMiningRate(uint256 tokenId) view returns (uint256)",
-  "function getAgentClass(uint256 tokenId) view returns (string)",
-  "function getAgentExperience(uint256 tokenId) view returns (uint256 currentXp, uint256 xpToNextLevel)",
-  "function getAgentXpVariance(uint256 tokenId) view returns (uint256)",
-  "function getAgentSupplyByClass(string agentClass) view returns (uint256)",
   
   // Agent Experience & Leveling
   "function addExperience(uint256 tokenId, uint256 baseXpAmount) external",
-  "function setExperience(uint256 tokenId, uint256 xpAmount) external",
+  
+  // Quest System
+  "function sendAgentOnQuest(uint256 tokenId, uint256 questDuration) external",
+  "function completeQuest(uint256 tokenId) external",
+  "function getQuestStatus(uint256 tokenId) view returns (bool isOnQuest, uint256 remainingTime, uint256 questEndTime)",
+  "function previewQuestRewards(uint256 tokenId) view returns (uint256 tokens, string rarity, string itemUri, uint256 xpGain)",
   
   // History & Provenance
   "function getItemHistory(uint256 tokenId) view returns (tuple(address from, address to, uint256 timestamp)[])",
@@ -72,6 +70,8 @@ export const GameItemABI = [
   "event AgentCreated(uint256 indexed tokenId, address indexed creator, string agentClass, uint256 miningRate, uint256 xpVariance)",
   "event AgentLeveledUp(uint256 indexed tokenId, uint256 newLevel, uint256 newMiningRate)",
   "event ExperienceGained(uint256 indexed tokenId, uint256 xpAmount, uint256 totalExperience)",
+  "event AgentSentOnQuest(uint256 indexed tokenId, address indexed owner, uint256 duration, uint256 endTime)",
+  "event AgentReturnedFromQuest(uint256 indexed tokenId, address indexed owner, uint256 xpGained, uint256 tokensEarned, string lootRarity)",
   
   // Standard ERC721 Events
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",

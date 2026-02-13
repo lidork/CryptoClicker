@@ -52,3 +52,9 @@ export interface AgentClassConfig {
   baseMiningRate: number;
   miningRateUnit: string;
 }
+
+export interface QuestInfo {
+  endTime: number;
+  duration: number;
+  isComplete: boolean;
+}

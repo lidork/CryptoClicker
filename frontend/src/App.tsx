@@ -11,10 +11,11 @@ import { InventoryScreen } from './components/InventoryScreen'
 import { ItemDetailsModal } from './components/ItemDetailsModal'
 import { LeaderboardModal } from './components/LeaderboardModal'
 import { NavigationBar } from './components/NavigationBar'
+import { RewardPreviewModal } from './components/RewardPreviewModal'
 import { ShopScreen } from './components/ShopScreen'
 import { WalletSection } from './components/WalletSection'
 import { ClickerTokenABI, GameItemABI } from './abis/contractABIs'
-import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS, AGENT_CLASSES, AGENT_MINT_COST } from './constants'
+import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS, AGENT_CLASSES, AGENT_MINT_COST, QUEST_DURATIONS } from './constants'
 import type {
   AgentClassConfig,
   AgentDetails,
@@ -22,7 +23,8 @@ import type {
   ItemHistoryRecord,
   ItemMetadata,
   LeaderboardEntry,
-  ShopItem
+  ShopItem,
+  QuestInfo
 } from './types'
 
 interface EthereumError {
@@ -65,6 +67,21 @@ function App() {
   const [showAgentCreationModal, setShowAgentCreationModal] = useState(false);
   const [selectedAgentDetails, setSelectedAgentDetails] = useState<AgentDetails | null>(null);
   const [agentBeingViewed, setAgentBeingViewed] = useState<string | null>(null);
+  
+  // Quest & Equip state
+  const [equippedAgentId, setEquippedAgentId] = useState<string | null>(null);
+  const [questingAgents, setQuestingAgents] = useState<Record<string, QuestInfo>>({});
+  
+  // Reward preview state
+  interface RewardPreview {
+    agentId: string;
+    tokens: string;
+    rarity: string;
+    hasLoot: boolean;
+    xpGain: string;
+  }
+  const [rewardPreview, setRewardPreview] = useState<RewardPreview | null>(null);
+  const [showRewardPreview, setShowRewardPreview] = useState(false);
 
 
   const handleConnect = useCallback((_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
@@ -115,6 +132,28 @@ function App() {
       setClickCount(0);
       setUnclaimedClicks(100); // Give enough for 10 tokens
       toast.info("Debug: Clicks Reset & Boosted");
+  };
+
+  const debugSendQuickQuest = async () => {
+    if (!signer) return;
+    
+    const agents = inventory.filter(i => i.isAgent && !questingAgents[i.id]);
+    if (agents.length === 0) {
+      toast.error("No available agents for quest");
+      return;
+    }
+
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+      const tokenId = agents[0].id;
+      const tx = await gameItemContract.sendAgentOnQuest(tokenId, QUEST_DURATIONS.DEBUG.seconds);
+      await tx.wait();
+      toast.success(`Agent #${tokenId} sent on 1-minute quest!`);
+      fetchQuestStatuses();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to send on quest");
+    }
   };
 
   const getItemStats = (uri: string, strengthVal: number) => {
@@ -244,15 +283,14 @@ function App() {
               // Fetch agent stats
               try {
                 const stats = await gameItemContract.getAgentStats(tokenId);
-                const agentClass = await gameItemContract.getAgentClass(tokenId);
-                console.log(`Agent ${tokenId}: class=${agentClass}, level=${stats.level}`);
+                console.log(`Agent ${tokenId}: class=${stats.agentClass}, level=${stats.level}`);
                 
                 return {
                   id: tokenId.toString(),
                   uri,
                   strength: Number(stats.strength),
                   isAgent: true,
-                  agentClass,
+                  agentClass: stats.agentClass,
                   level: Number(stats.level),
                   miningRate: Number(stats.miningRate),
                   experience: Number(stats.experience),
@@ -363,15 +401,28 @@ function App() {
     let newMultiplier = 1;
     let newPassive = 0;
 
+    // Lootbox items
     inventory.forEach(item => {
-        const stats = getItemStats(item.uri, item.strength);
-        newMultiplier += stats.multiplier;
-        newPassive += stats.passive;
+        if (!item.isAgent) {
+          const stats = getItemStats(item.uri, item.strength);
+          newMultiplier += stats.multiplier;
+          newPassive += stats.passive;
+        }
     });
+
+    // Equipped agent bonuses
+    if (equippedAgentId && !questingAgents[equippedAgentId]) {
+      const agent = inventory.find(i => i.id === equippedAgentId && i.isAgent);
+      if (agent && agent.level) {
+        const agentBonus = calculateEquippedAgentBonus(agent);
+        newMultiplier += agentBonus.clickBonus;
+        newPassive += agentBonus.passiveBonus;
+      }
+    }
 
     setClickMultiplier(parseFloat(newMultiplier.toFixed(2)));
     setPassiveIncome(parseFloat(newPassive.toFixed(2)));
-  }, [inventory]);
+  }, [inventory, equippedAgentId, questingAgents]);
 
 
   // Passive Income Timer
@@ -671,7 +722,6 @@ const createAgent = async (agentClass: string) => {
     
     // Get agent stats
     const agentStats = await gameItemContract.getAgentStats(tokenId);
-    const agentClass = await gameItemContract.getAgentClass(tokenId);
     
     setSelectedAgentDetails({
       tokenId,
@@ -680,25 +730,21 @@ const createAgent = async (agentClass: string) => {
       creationTime: Number(agentStats.creationTime),
       experience: Number(agentStats.experience),
       strength: Number(agentStats.strength),
-      agentClass: agentClass,
+      agentClass: agentStats.agentClass,
       xpGainVariance: Number(agentStats.xpGainVariance)
     });
     setAgentBeingViewed(tokenId);
 
-    // Get history
-    const history = await gameItemContract.getItemHistory(tokenId);
-    const normalizedHistory: ItemHistoryRecord[] = history.map((record: { from: string; to: string }) => ({
-      from: record.from,
-      to: record.to
-    }));
-    setSelectedItemHistory(normalizedHistory);
+    // Get history (removed - no longer stored on chain)
+    const normalizedHistory: ItemHistoryRecord[] = [];
+    setSelectedItemHistory(normalizedHistory); // Empty array since getItemHistory removed
   } catch (e) {
     console.error("Error fetching agent details:", e);
     toast.error("Failed to fetch agent details");
   }
 };
 
-const getAgentSkills = (agentClass: string, level: number) => {
+  const getAgentSkills = (agentClass: string, level: number) => {
   void level;
   const baseSkills: Record<string, string[]> = {
     "Warrior": [
@@ -720,6 +766,240 @@ const getAgentSkills = (agentClass: string, level: number) => {
 
   return baseSkills[agentClass] || [];
 };
+
+  const calculateEquippedAgentBonus = (agent: InventoryItem) => {
+    if (!agent.level || !agent.agentClass) return { clickBonus: 0, passiveBonus: 0 };
+    
+    switch (agent.agentClass) {
+      case "Warrior":
+        return {
+          clickBonus: agent.level * 0.05, // +5% per level
+          passiveBonus: 0
+        };
+      case "Guardian":
+        return {
+          clickBonus: 0,
+          passiveBonus: agent.level * 0.1 // +10% per level
+        };
+      case "Sorcerer":
+        return {
+          clickBonus: agent.level * 0.02, // +2% per level
+          passiveBonus: agent.level * 0.08 // +8% per level
+        };
+      default:
+        return { clickBonus: 0, passiveBonus: 0 };
+    }
+  };
+
+  const equipAgent = (tokenId: string) => {
+    const agent = inventory.find(i => i.id === tokenId && i.isAgent);
+    if (!agent) return;
+    
+    // Can't equip if on quest
+    if (questingAgents[tokenId]) {
+      toast.error("Cannot equip an agent that is on a quest!");
+      return;
+    }
+    
+    setEquippedAgentId(tokenId);
+    toast.success(`${agent.agentClass} Agent equipped!`);
+  };
+
+  const unequipAgent = () => {
+    setEquippedAgentId(null);
+    toast.info("Agent unequipped");
+  };
+
+  const previewQuestRewards = async (tokenId: string) => {
+    if (!signer) return;
+    
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+      const tokenIdBigInt = BigInt(tokenId);
+      
+      const preview = await gameItemContract.previewQuestRewards(tokenIdBigInt);
+      const tokensInCLK = Number(preview.tokens) / 1e18; // Convert from wei
+      
+      setRewardPreview({
+        agentId: tokenId,
+        tokens: tokensInCLK.toFixed(2),
+        rarity: preview.rarity,
+        hasLoot: preview.itemUri.length > 0,
+        xpGain: Number(preview.xpGain).toString()
+      });
+      setShowRewardPreview(true);
+    } catch (e) {
+      console.error("Failed to preview rewards:", e);
+      toast.error("Could not preview rewards");
+    }
+  };
+
+  const sendAgentOnQuest = async (tokenId: string, questDuration: number) => {
+    if (!signer || !userAddress) {
+      toast.error("Wallet not connected!");
+      return;
+    }
+    
+    // Unequip if this agent is equipped
+    if (equippedAgentId === tokenId) {
+      setEquippedAgentId(null);
+    }
+    
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+      
+      // Parse tokenId to BigInt
+      const tokenIdBigInt = BigInt(tokenId);
+      console.log(`Sending agent ${tokenIdBigInt} on quest for ${questDuration} seconds`);
+      
+      const txPromise = async () => {
+        console.log("Attempting to call sendAgentOnQuest...");
+        const tx = await gameItemContract.sendAgentOnQuest(tokenIdBigInt, questDuration);
+        console.log("Quest transaction submitted:", tx.hash);
+        const receipt = await tx.wait();
+        console.log("Quest transaction confirmed:", receipt?.hash);
+        return receipt;
+      };
+      
+      await toast.promise(txPromise(), {
+        pending: "Sending agent on quest...",
+        success: "Agent departed! Safe travels! 🗺️"
+      });
+      
+      // Refetch quest statuses to sync with blockchain
+      await fetchQuestStatuses();
+      await fetchInventory();
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error("Quest start failed:", e);
+      console.error("Error details:", errorMsg);
+      
+      // Try to extract the contract error message
+      if (errorMsg.includes("Only agents can quest")) {
+        toast.error("This isn't an agent! Only agents can go on quests.");
+      } else if (errorMsg.includes("Not your agent")) {
+        toast.error("You don't own this agent!");
+      } else if (errorMsg.includes("Agent already on quest")) {
+        toast.error("This agent is already on a quest!");
+      } else if (errorMsg.includes("Minimum 1 minute quest")) {
+        toast.error("Quest duration must be at least 1 minute!");
+      } else {
+        toast.error("Failed to send agent on quest");
+      }
+    }
+  };
+
+  const completeQuest = async (tokenId: string) => {
+    if (!signer || !userAddress) {
+      toast.error("Wallet not connected!");
+      return;
+    }
+    
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+      
+      // Parse tokenId to BigInt
+      const tokenIdBigInt = BigInt(tokenId);
+      console.log(`Completing quest for agent ${tokenIdBigInt}`);
+      
+      let rewardText = "Agent returned! 🎉";
+      
+      // Try to preview rewards first
+      try {
+        const preview = await gameItemContract.previewQuestRewards(tokenIdBigInt);
+        const tokensInCLK = Number(preview.tokens) / 1e18;
+        rewardText = `🎉 ${preview.rarity} Reward: ${tokensInCLK.toFixed(2)} CLK${preview.itemUri.length > 0 ? ' + Loot Item' : ''}`;
+      } catch (e) {
+        console.warn("Could not preview rewards, will show basic message" + e);
+      }
+      
+      const txPromise = async () => {
+        console.log("Attempting to call completeQuest...");
+        const tx = await gameItemContract.completeQuest(tokenIdBigInt);
+        console.log("Complete quest transaction submitted:", tx.hash);
+        const receipt = await tx.wait();
+        console.log("Complete quest transaction confirmed:", receipt?.hash);
+        return receipt;
+      };
+      
+      await toast.promise(txPromise(), {
+        pending: "Completing quest...",
+        success: rewardText,
+      });
+      
+      setShowRewardPreview(false);
+      
+      // Wait a moment for blockchain to index new items, then refetch
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Refetch everything after quest completion
+      await fetchInventory();
+      await fetchBalance();
+      await fetchQuestStatuses();  // Refetch quest statuses to update UI immediately
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error("Quest completion failed:", e);
+      console.error("Error details:", errorMsg);
+      
+      if (errorMsg.includes("Agent not on quest")) {
+        toast.error("This agent is not on a quest!");
+      } else if (errorMsg.includes("Not your quest")) {
+        toast.error("You don't own this quest!");
+      } else if (errorMsg.includes("Quest not finished")) {
+        toast.error("The quest is still in progress!");
+      } else {
+        toast.error("Failed to complete quest");
+      }
+    }
+  };
+
+  const fetchQuestStatuses = useCallback(async () => {
+    if (!signer) return;
+    
+    const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer);
+    const agents = inventory.filter(i => i.isAgent);
+    
+    const statuses: Record<string, QuestInfo> = {};
+    
+    await Promise.all(agents.map(async (agent) => {
+      try {
+        // Parse tokenId to BigInt
+        const tokenIdBigInt = BigInt(agent.id);
+        const status = await gameItemContract.getQuestStatus(tokenIdBigInt);
+        if (status.isOnQuest) {
+          const endTime = Number(status.questEndTime);
+          const isComplete = Date.now() / 1000 >= endTime;
+          statuses[agent.id] = {
+            endTime,
+            duration: Number(status.questEndTime) - (Number(status.questEndTime) - Number(status.remainingTime)),
+            isComplete
+          };
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch quest status for ${agent.id}. Assuming not on quest.`, e);
+      }
+    }));
+    
+    setQuestingAgents(statuses);
+  }, [signer, inventory]);
+
+  // Fetch quest statuses when inventory changes
+  useEffect(() => {
+    if (inventory.length > 0 && signer) {
+      fetchQuestStatuses();
+    }
+  }, [inventory.length, signer, fetchQuestStatuses]);
+
+  // Poll quest statuses every 30 seconds
+  useEffect(() => {
+    if (!signer || inventory.length === 0) return;
+    
+    const interval = setInterval(() => {
+      fetchQuestStatuses();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [signer, inventory.length, fetchQuestStatuses]);
 
   const transferItem = async () => {
     if (!signer || !userAddress || !selectedTokenId) return;
@@ -795,12 +1075,14 @@ const getAgentSkills = (agentClass: string, level: number) => {
         <div style={{
           position: 'fixed', bottom: '10px', left: '10px', 
           background: 'rgba(50,0,0,0.9)', padding: '15px', 
-          border: '1px solid red', borderRadius: '8px', zIndex: 2000
+          border: '1px solid red', borderRadius: '8px', zIndex: 2000,
+          maxWidth: '250px'
         }}>
           <h3 style={{margin: '0 0 10px 0', color: 'red'}}>🛠️ Debug Menu</h3>
           <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
-             <button onClick={debugMintTokens}>Give 500 Tokens (Owner Only)</button>
+             <button onClick={debugMintTokens}>Give 500 Tokens (Owner)</button>
              <button onClick={debugResetClicks}>Set 100 Free Clicks</button>
+             <button onClick={debugSendQuickQuest}>Send Agent on 1min Quest</button>
              <button onClick={() => setShowDebug(false)}>Close Menu</button>
           </div>
         </div>
@@ -857,6 +1139,24 @@ const getAgentSkills = (agentClass: string, level: number) => {
           />
         )}
 
+        {showRewardPreview && rewardPreview && (
+          <RewardPreviewModal
+            agentId={rewardPreview.agentId}
+            tokens={rewardPreview.tokens}
+            rarity={rewardPreview.rarity}
+            hasLoot={rewardPreview.hasLoot}
+            xpGain={rewardPreview.xpGain}
+            onConfirm={(agentId) => {
+              setShowRewardPreview(false);
+              completeQuest(agentId);
+            }}
+            onCancel={() => {
+              setShowRewardPreview(false);
+              setRewardPreview(null);
+            }}
+          />
+        )}
+
         {selectedTokenId && !agentBeingViewed && (
           <ItemDetailsModal
             selectedTokenId={selectedTokenId}
@@ -880,6 +1180,15 @@ const getAgentSkills = (agentClass: string, level: number) => {
             userAddress={userAddress}
             getAgentSkills={getAgentSkills}
             onClose={() => setAgentBeingViewed(null)}
+            isOnQuest={!!questingAgents[agentBeingViewed]}
+            questEndTime={questingAgents[agentBeingViewed]?.endTime}
+            questDuration={questingAgents[agentBeingViewed]?.duration}
+            canCompleteQuest={questingAgents[agentBeingViewed]?.isComplete || false}
+            isEquipped={equippedAgentId === agentBeingViewed}
+            onEquip={equipAgent}
+            onUnequip={unequipAgent}
+            onSendQuest={sendAgentOnQuest}
+            onPreviewRewards={previewQuestRewards}
           />
         )}
       </div>

@@ -43,23 +43,23 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 ### Phase 2: Game Logic Enhancements
 - [x] **Dynamic Pricing**: Implement logic where item prices increase after every purchase (bonding curve) or based on supply.
 - [x] **Leaderboard**: Create a simple leaderboard showing addresses with the most `CLK` tokens (requires indexing events).
-- [ ] **Expand Shop Inventory**: Increase item variety to at least 6 items (e.g., Potions, Pickaxes) with unique bonus mechanics implemented in the frontend.
+- [x] **Expand Shop Inventory**: Increase item variety to at least 6 items (e.g., Potions, Pickaxes) with unique bonus mechanics implemented in the frontend. - expanded with Agents
 
 ### Phase 3: ERC-8004 "Lite" Implementation (Identity & Validation)
-- [ ] **Smart Contract - Agent Identity**: Refactor `GameItem.sol` to store "Agent Stats" (Level, Mining Rate, Creation Time) in a struct mapping, acting as a basic **Identity Registry**.
+- [x] **Smart Contract - Agent Identity**: Refactor `GameItem.sol` to store "Agent Stats" (Level, Mining Rate, Creation Time) in a struct mapping, acting as a basic **Identity Registry**.
 - [ ] **Smart Contract - Validator Logic**: Implement `ECDSA` signature verification in `GameToken.sol` to ensure only the authorized server can approve reward claims (Anti-Cheat / **Validation Registry** concept).
 - [ ] **Backend - Signer Service**: Create a simple API endpoint (e.g., Next.js API route or Express) that validates game logic (clicks) and returns a cryptographic signature for the transaction.
-- [ ] **Frontend - Agent Passport**: Update the UI to display the NFT not just as an image, but as an "Agent" with visible stats and a history log (Reputation).
+- [x] **Frontend - Agent Passport**: Update the UI to display the NFT not just as an image, but as an "Agent" with visible stats and a history log (Reputation).
 
 ### Phase 4: Advanced Smart Contract Features
-- [ ] **Staking System**: Allow users to "stake" their NFTs to earn passive `CLK` tokens without needing to keep the tab open.
+- [x] **Staking System**: Allow users to "stake" their NFTs to earn passive `CLK` tokens without needing to keep the tab open. - added as agents
 - [ ] **Gasless Transactions**: Implement meta-transactions (EIP-2771) so users don't need Sepolia ETH to click/claim (pay gas via relayer).
-- [ ] **Marketplace**: Build a native marketplace contract where users can list items for sale for `CLK` tokens (instead of just transferring them).
+- [ ] **Marketplace**: Build a native marketplace contract where users can list items for sale for `CLK` tokens (instead of just transferring them). 
+- [ ] **Owner Payout** Build the infrastructure for the owner of the contracts to get paid back in `CLK` staked/used.
 
 ### Phase 5: Production Readiness
 - [ ] **IPFS Integration**: Move NFT metadata (images/JSON) to real IPFS storage (Pinata/NFT.Storage) instead of hardcoded strings or local placeholders.
 - [ ] **Verification**: Verify smart contract source code on Etherscan for transparency.
-- [ ] **Unit Tests**: Add comprehensive Hardhat tests for `ClickerToken.sol` and `GameItem.sol` to cover edge cases (e.g., max supply, transfer restrictions).
 
 ## 5. Installation and Usage
 

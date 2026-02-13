@@ -48,101 +48,83 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
      * Agents evolve over time and gain XP through gameplay
      */
     struct AgentStats {
-        uint256 level;              // Current agent level (starts at 1)
-        uint256 miningRate;         // Base passive token generation (scaled by 1e18)
-        uint256 creationTime;       // Block timestamp at creation
-        uint256 experience;         // Cumulative XP gained
-        uint256 strength;           // Base stat (1-50), influences XP gain variance
-        string agentClass;          // "Warrior", "Guardian", "Sorcerer"
-        uint256 xpGainVariance;     // Randomized XP multiplier (affects leveling speed)
+        uint256 level;              
+        uint256 miningRate;         
+        uint256 creationTime;       
+        uint256 experience;         
+        uint256 strength;           
+        string agentClass;          
+        uint256 xpGainVariance;     
     }
 
     /**
-     * @dev Ownership/transfer history for provenance tracking
+     * @dev Quest/Staking information for agents
      */
-    struct TransferRecord {
-        address from;
-        address to;
-        uint256 timestamp;
+    struct QuestInfo {
+        address staker;
+        uint256 startTime;
+        uint256 questDuration;
+        bool isOnQuest;
+        bytes32 randomSeed;
     }
-
-    // ============ MAPPINGS ============
     
-    // NFT Type tracking
     mapping(uint256 => ItemType) public nftTypes;
-    
-    // Lootbox-specific
-    mapping(string => uint256) public uriSupply;                   // Track supply per lootbox URI
-    mapping(uint256 => ItemMetadata) public items;                 // Lootbox item metadata
-    
-    // Agent-specific (ERC-8004 Identity Registry)
-    mapping(uint256 => AgentStats) public agentRegistry;          // Complete agent stats
-    mapping(uint256 => uint256) public agentMintCounts;           // Track agent supply per class
-    
-    // Universal
-    mapping(uint256 => TransferRecord[]) private _itemHistory;    // Transfer history for all NFTs
+    mapping(string => uint256) public uriSupply;
+    mapping(uint256 => ItemMetadata) public items;
+    mapping(uint256 => AgentStats) public agentRegistry;
+    mapping(uint256 => QuestInfo) public agentQuests;   
 
-    // ============ CONSTANTS ============
-    
     // Pricing (Lootbox)
-    uint256 public constant PRICE_INCREMENT = 1 * 10**18;         // 1 token per additional unit
+    uint256 public constant PRICE_INCREMENT = 1 * 10**18;         
     
-    // Experience (Agent)
-    uint256 public constant XP_PER_LEVEL = 100;                  // Base XP needed per level
+    uint256 public constant XP_PER_LEVEL = 100;                 
     
-    // Base mining rates per agent class (tokens/sec, scaled by 1e18)
-    uint256 public constant BASE_WARRIOR_RATE = 0.5 * 10**18;    // 0.5 tokens/sec
-    uint256 public constant BASE_GUARDIAN_RATE = 1 * 10**18;     // 1 token/sec
-    uint256 public constant BASE_SORCERER_RATE = 2 * 10**18;     // 2 tokens/sec
+    uint256 public constant BASE_WARRIOR_RATE = 0.5 * 10**18;    
+    uint256 public constant BASE_GUARDIAN_RATE = 1 * 10**18;     
+    uint256 public constant BASE_SORCERER_RATE = 2 * 10**18;     
     
-    // Agent creation costs (in CLK tokens)
-    uint256 public constant AGENT_MINT_COST = 500 * 10**18;      // 500 CLK to create agent
+    uint256 public constant AGENT_MINT_COST = 500 * 10**18;      
 
-    // ============ EVENTS ============
-    
-    // Lootbox events
-    event LootboxItemMinted(uint256 indexed tokenId, address indexed owner, string itemType, uint256 price, uint256 strength);
     
     // Agent events
     event AgentCreated(uint256 indexed tokenId, address indexed creator, string agentClass, uint256 miningRate, uint256 xpVariance);
     event AgentLeveledUp(uint256 indexed tokenId, uint256 newLevel, uint256 newMiningRate);
     event ExperienceGained(uint256 indexed tokenId, uint256 xpAmount, uint256 totalExperience);
+    
+    // Quest events
+    event AgentSentOnQuest(uint256 indexed tokenId, address indexed owner, uint256 duration, uint256 endTime);
+    event AgentReturnedFromQuest(uint256 indexed tokenId, address indexed owner, uint256 xpGained, uint256 tokensEarned, string lootRarity);
 
     constructor(address _paymentTokenAddress) ERC721("ClickerItem", "ITM") Ownable(msg.sender) {
         paymentToken = IERC20(_paymentTokenAddress);
         _setDefaultRoyalty(msg.sender, 1000); // 10% royalty
     }
 
-    // ============ LOOTBOX FUNCTIONS ============
     
-    /**
-     * @dev Calculate dynamic price for lootbox items (bonding curve)
-     */
+    
     function getDynamicPrice(string memory tokenURI, uint256 basePrice) public view returns (uint256) {
+        // Price based on supply of THIS specific item type
         uint256 supply = uriSupply[tokenURI];
         return basePrice + (supply * PRICE_INCREMENT);
     }
 
-    /**
-     * @dev Mint a lootbox item (consumable, fixed stats)
-     */
     function mintLootboxItem(address player, string memory tokenURI, uint256 basePrice)
         external
         returns (uint256)
     {
+        // Calculate price BEFORE incrementing tokenId (to match frontend calculation)
+        uint256 currentPrice = getDynamicPrice(tokenURI, basePrice);
+        require(
+            paymentToken.transferFrom(msg.sender, address(this), currentPrice),
+            "E1"
+        );
+
         uint256 tokenId = _nextTokenId++;
         _mint(player, tokenId);
         _setTokenURI(tokenId, tokenURI);
 
         // Mark as lootbox
         nftTypes[tokenId] = ItemType.LOOTBOX;
-
-        // Calculate and charge dynamic price
-        uint256 currentPrice = getDynamicPrice(tokenURI, basePrice);
-        require(
-            paymentToken.transferFrom(msg.sender, address(this), currentPrice),
-            "Payment failed"
-        );
 
         uriSupply[tokenURI]++;
 
@@ -161,42 +143,11 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             strength: randomStrength
         });
 
-        // Record mint as first history event
-        _itemHistory[tokenId].push(TransferRecord({
-            from: address(0),
-            to: player,
-            timestamp: block.timestamp
-        }));
-
-        emit LootboxItemMinted(tokenId, player, tokenURI, currentPrice, randomStrength);
-
         return tokenId;
     }
 
-    // ============ AGENT FUNCTIONS ============
-    
-    /**
-     * @dev Derive agent class from URI (maps lootbox URIs to agent archetypes)
-     */
-    function _deriveAgentClass(string memory tokenURI) internal pure returns (string memory) {
-        bytes32 uriHash = keccak256(bytes(tokenURI));
-        
-        if (uriHash == keccak256(bytes("ipfs://valid-uri-1"))) {
-            return "Warrior";
-        }
-        if (uriHash == keccak256(bytes("ipfs://valid-uri-2"))) {
-            return "Guardian";
-        }
-        if (uriHash == keccak256(bytes("ipfs://valid-uri-3"))) {
-            return "Sorcerer";
-        }
-        
-        return "Wanderer";
-    }
 
-    /**
-     * @dev Get base mining rate for agent class
-     */
+
     function _getBaseMiningRate(string memory agentClass) internal pure returns (uint256) {
         bytes32 classHash = keccak256(bytes(agentClass));
         
@@ -213,11 +164,6 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         return BASE_WARRIOR_RATE;
     }
 
-    /**
-     * @dev Generate XP variance for agent (affects leveling speed)
-     * Stronger agents (higher strength) can have higher or lower XP rates
-     * Returns a multiplier scaled to 1e18 (1e18 = 1.0x)
-     */
     function _generateXpVariance(uint256 tokenId) internal view returns (uint256) {
         // Use token ID and block hash for randomness
         uint256 variance = uint256(keccak256(abi.encodePacked(
@@ -230,10 +176,6 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         return 8e17 + (variance % 4e17);
     }
 
-    /**
-     * @dev Create a persistent Agent NFT (ERC-8004 lite)
-     * Agents are higher-tier, evolve through gameplay, can have randomized progression
-     */
     function mintAgent(
         address player,
         string memory agentClass,
@@ -244,7 +186,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     {
         require(
             paymentToken.transferFrom(msg.sender, address(this), AGENT_MINT_COST),
-            "Insufficient CLK to create agent"
+            "E2"
         );
 
         uint256 tokenId = _nextTokenId++;
@@ -253,9 +195,6 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
 
         // Mark as agent
         nftTypes[tokenId] = ItemType.AGENT;
-
-        // Track agent supply per class
-        agentMintCounts[_hashClass(agentClass)]++;
 
         // Generate base stats
         uint256 baseMiningRate = _getBaseMiningRate(agentClass);
@@ -277,22 +216,11 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             xpGainVariance: xpVariance
         });
 
-        // Record creation as first history event
-        _itemHistory[tokenId].push(TransferRecord({
-            from: address(0),
-            to: player,
-            timestamp: block.timestamp
-        }));
-
         emit AgentCreated(tokenId, msg.sender, agentClass, baseMiningRate, xpVariance);
 
         return tokenId;
     }
 
-    /**
-     * @dev Add experience to an agent
-     * XP gain is affected by agent's xpGainVariance (randomized progression)
-     */
     function addExperience(uint256 tokenId, uint256 baseXpAmount) external onlyOwner {
         require(_exists(tokenId), "Token does not exist");
         require(nftTypes[tokenId] == ItemType.AGENT, "Only agents gain experience");
@@ -305,8 +233,13 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
 
         emit ExperienceGained(tokenId, actualXp, agent.experience);
 
-        // Check for level up
+        _checkLevelUp(tokenId);
+    }
+
+    function _checkLevelUp(uint256 tokenId) internal {
+        AgentStats storage agent = agentRegistry[tokenId];
         uint256 newLevel = (agent.experience / XP_PER_LEVEL) + 1;
+        
         if (newLevel > agent.level) {
             agent.level = newLevel;
             // Increase mining rate by 10% per level
@@ -316,166 +249,166 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         }
     }
 
-    /**
-     * @dev Admin function to set agent experience directly (for testing/events)
-     */
-    function setExperience(uint256 tokenId, uint256 xpAmount) external onlyOwner {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "Only agents have experience");
 
-        AgentStats storage agent = agentRegistry[tokenId];
-        agent.experience = xpAmount;
 
-        // Recalculate level
-        uint256 newLevel = (xpAmount / XP_PER_LEVEL) + 1;
-        agent.level = newLevel;
-
-        emit ExperienceGained(tokenId, xpAmount, xpAmount);
-    }
-
-    // ============ QUERY FUNCTIONS ============
-    
-    /**
-     * @dev Get NFT type
-     */
     function getNftType(uint256 tokenId) external view returns (ItemType) {
-        require(_exists(tokenId), "Token does not exist");
         return nftTypes[tokenId];
     }
 
-    /**
-     * @dev Get complete agent stats
-     */
     function getAgentStats(uint256 tokenId) external view returns (AgentStats memory) {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "This is not an agent");
         return agentRegistry[tokenId];
     }
 
-    /**
-     * @dev Get agent level
-     */
-    function getAgentLevel(uint256 tokenId) external view returns (uint256) {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "This is not an agent");
-        return agentRegistry[tokenId].level;
-    }
 
-    /**
-     * @dev Get agent mining rate
-     */
-    function getAgentMiningRate(uint256 tokenId) external view returns (uint256) {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "This is not an agent");
-        return agentRegistry[tokenId].miningRate;
-    }
 
-    /**
-     * @dev Get agent class
-     */
-    function getAgentClass(uint256 tokenId) external view returns (string memory) {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "This is not an agent");
-        return agentRegistry[tokenId].agentClass;
-    }
-
-    /**
-     * @dev Get agent XP progression
-     */
-    function getAgentExperience(uint256 tokenId) 
-        external 
-        view 
-        returns (uint256 currentXp, uint256 xpToNextLevel)
-    {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "This is not an agent");
-        
-        AgentStats storage agent = agentRegistry[tokenId];
-        currentXp = agent.experience;
-        xpToNextLevel = ((agent.level) * XP_PER_LEVEL) - agent.experience;
-    }
-
-    /**
-     * @dev Get agent XP variance (leveling speed multiplier)
-     */
-    function getAgentXpVariance(uint256 tokenId) external view returns (uint256) {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.AGENT, "This is not an agent");
-        return agentRegistry[tokenId].xpGainVariance;
-    }
-
-    /**
-     * @dev Get lootbox item metadata
-     */
-    function getItemMetadata(uint256 tokenId) 
-        external 
-        view 
-        returns (ItemMetadata memory)
-    {
-        require(_exists(tokenId), "Token does not exist");
-        require(nftTypes[tokenId] == ItemType.LOOTBOX, "This is not a lootbox item");
-        return items[tokenId];
-    }
-
-    // ============ HISTORY & PROVENANCE ============
-    
-    /**
-     * @dev Override transfer to record history
-     */
     function _update(address to, uint256 tokenId, address auth) 
         internal 
         virtual 
         override 
         returns (address) 
     {
-        address from = super._update(to, tokenId, auth);
-        
-        if (from != address(0) && to != address(0)) {
-            _itemHistory[tokenId].push(TransferRecord({
-                from: from,
-                to: to,
-                timestamp: block.timestamp
-            }));
-        }
-        return from;
+        return super._update(to, tokenId, auth);
     }
 
-    /**
-     * @dev Get complete transfer history for an NFT
-     */
-    function getItemHistory(uint256 tokenId) 
-        external 
-        view 
-        returns (TransferRecord[] memory)
-    {
-        return _itemHistory[tokenId];
-    }
 
-    // ============ UTILITIES ============
-    
-    /**
-     * @dev Check if token exists
-     */
+
+ 
     function _exists(uint256 tokenId) internal view returns (bool) {
         return ownerOf(tokenId) != address(0);
     }
 
-    /**
-     * @dev Hash agent class for lookup
-     */
-    function _hashClass(string memory agentClass) internal pure returns (uint256) {
-        return uint256(keccak256(bytes(agentClass)));
+    function sendAgentOnQuest(uint256 tokenId, uint256 questDuration) external {
+        require(ownerOf(tokenId) == msg.sender, "E3");
+        require(!agentQuests[tokenId].isOnQuest, "E4");
+        require(questDuration >= 60, "E5");
+        
+        // Capture random seed using previous block hash (immutable after this block)
+        bytes32 seed = blockhash(block.number - 1);
+        
+        agentQuests[tokenId] = QuestInfo({
+            staker: msg.sender,
+            startTime: block.timestamp,
+            questDuration: questDuration,
+            isOnQuest: true,
+            randomSeed: seed
+        });
+        
+        emit AgentSentOnQuest(tokenId, msg.sender, questDuration, block.timestamp + questDuration);
     }
 
-    /**
-     * @dev Get agent supply for a class
-     */
-    function getAgentSupplyByClass(string memory agentClass) 
-        external 
-        view 
-        returns (uint256) 
-    {
-        return agentMintCounts[_hashClass(agentClass)];
+    function completeQuest(uint256 tokenId) external {
+        QuestInfo storage quest = agentQuests[tokenId];
+        require(quest.isOnQuest, "E6");
+        require(quest.staker == msg.sender, "E7");
+        require(block.timestamp >= quest.startTime + quest.questDuration, "E8");
+        
+        // Calculate rewards based on duration and agent stats
+        AgentStats storage agent = agentRegistry[tokenId];
+        
+        uint256 baseXp = quest.questDuration / 36; // ~10 XP per hour
+        uint256 xpGained = (baseXp * agent.xpGainVariance) / 1e18;
+        
+        // Determine loot using stored deterministic seed
+        (uint256 tokens, string memory rarity, string memory itemUri) = _rollQuestLoot(tokenId, agent, quest);
+        
+        // Award XP
+        agent.experience += xpGained;
+        _checkLevelUp(tokenId);
+        
+        // Mint tokens
+        require(paymentToken.transfer(msg.sender, tokens), "E9");
+        
+        // Mint loot item if earned
+        if (bytes(itemUri).length > 0) {
+            _mintQuestLoot(msg.sender, itemUri);
+        }
+        
+        // Clear quest
+        quest.isOnQuest = false;
+        
+        emit AgentReturnedFromQuest(tokenId, msg.sender, xpGained, tokens, rarity);
+    }
+
+    function previewQuestRewards(uint256 tokenId) external view returns (
+    uint256 tokens,
+    string memory rarity,
+    string memory itemUri,
+    uint256 xpGain
+    ) {
+        QuestInfo memory quest = agentQuests[tokenId];
+        require(quest.isOnQuest, "Not on quest");
+        
+        AgentStats memory agent = agentRegistry[tokenId];
+        uint256 baseXp = quest.questDuration / 36;
+        xpGain = (baseXp * agent.xpGainVariance) / 1e18;
+        
+        (tokens, rarity, itemUri) = _rollQuestLoot(tokenId, agent, quest);
+    }
+
+    function _rollQuestLoot(
+        uint256 tokenId,
+        AgentStats memory agent,
+        QuestInfo memory quest
+    ) internal pure returns (uint256 tokens, string memory rarity, string memory itemUri) {
+        // Use stored random seed from quest start - makes roll deterministic
+        uint256 roll = uint256(keccak256(abi.encodePacked(
+            quest.randomSeed,
+            tokenId,
+            agent.strength
+        ))) % 100;
+        
+        // Scale rewards by quest duration (longer = better)
+        uint256 durationMultiplier = (quest.questDuration / 3600) + 1; // Hours + 1
+        
+        if (roll < 60) { // Common (60%)
+            rarity = "Common";
+            tokens = (5 + (roll % 15)) * 1e18 * durationMultiplier;
+            itemUri = "";
+        } else if (roll < 85) { // Uncommon (25%)
+            rarity = "Uncommon";
+            tokens = (25 + (roll % 25)) * 1e18 * durationMultiplier;
+            itemUri = roll % 3 == 0 ? "ipfs://valid-uri-1" : ""; // 33% chance for Sword
+        } else if (roll < 97) { // Rare (12%)
+            rarity = "Rare";
+            tokens = (75 + (roll % 75)) * 1e18 * durationMultiplier;
+            itemUri = roll % 2 == 0 ? "ipfs://valid-uri-1" : "ipfs://valid-uri-2"; // Sword or Shield
+        } else { // Epic (3%)
+            rarity = "Epic";
+            tokens = (200 + (roll % 100)) * 1e18 * durationMultiplier;
+            itemUri = "ipfs://valid-uri-3"; // Guaranteed Scepter
+        }
+        
+        return (tokens, rarity, itemUri);
+    }
+
+    function _mintQuestLoot(address recipient, string memory uri) internal {
+        uint256 tokenId = _nextTokenId++;
+        _mint(recipient, tokenId);
+        _setTokenURI(tokenId, uri);
+        nftTypes[tokenId] = ItemType.LOOTBOX;
+        
+        // Generate random strength
+        uint256 randomStrength = (uint256(keccak256(abi.encodePacked(
+            block.timestamp,
+            tokenId
+        ))) % 50) + 1;
+        
+        items[tokenId] = ItemMetadata({
+            purchasePrice: 0,
+            mintDate: block.timestamp,
+            originalCreator: recipient,
+            strength: randomStrength
+        });
+    }
+    function getQuestStatus(uint256 tokenId) external view returns (
+        bool isOnQuest,
+        uint256 remainingTime,
+        uint256 questEndTime
+    ) {
+        QuestInfo memory quest = agentQuests[tokenId];
+        isOnQuest = quest.isOnQuest;
+        questEndTime = quest.startTime + quest.questDuration;
+        remainingTime = questEndTime > block.timestamp ? questEndTime - block.timestamp : 0;
     }
 
     function supportsInterface(bytes4 interfaceId)
