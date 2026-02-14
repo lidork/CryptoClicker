@@ -10,6 +10,7 @@ import { GameScreen } from './components/GameScreen'
 import { InventoryScreen } from './components/InventoryScreen'
 import { ItemDetailsModal } from './components/ItemDetailsModal'
 import { LeaderboardModal } from './components/LeaderboardModal'
+import { MarketplaceScreen } from './components/MarketplaceScreen'
 import { NavigationBar } from './components/NavigationBar'
 import { RewardPreviewModal } from './components/RewardPreviewModal'
 import { ShopScreen } from './components/ShopScreen'
@@ -21,6 +22,7 @@ import { useQuestSystem } from './hooks/useQuestSystem'
 import { useInventoryManagement } from './hooks/useInventoryManagement'
 import { useShopPurchasing } from './hooks/useShopPurchasing'
 import { useAgentCreation } from './hooks/useAgentCreation'
+import { useMarketplace } from './hooks/useMarketplace'
 import { getAgentSkills } from './utils/gameLogic'
 import type {
   AgentClassConfig,
@@ -33,7 +35,7 @@ function App() {
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null)
   const [userAddress, setUserAddress] = useState<string | null>(null)
   const [showDebug, setShowDebug] = useState(false)
-  const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'agents' | 'inventory'>('game')
+  const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'agents' | 'inventory' | 'marketplace'>('game')
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [tokenBalance, setTokenBalance] = useState("0")
@@ -48,6 +50,7 @@ function App() {
   const shopPurchasing = useShopPurchasing(signer, userAddress, tokenBalance)
   const questSystem = useQuestSystem(signer, userAddress, inventoryMgmt.inventory, equippedAgentId, setEquippedAgentId)
   const agentCreation = useAgentCreation(signer, userAddress, tokenBalance)
+  const marketplace = useMarketplace(signer, userAddress)
 
   const handleConnect = useCallback((_: BrowserProvider, newSigner: JsonRpcSigner, address: string) => {
     setSigner(newSigner)
@@ -414,6 +417,17 @@ function App() {
           />
         )}
 
+        {currentScreen === 'marketplace' && (
+          <MarketplaceScreen
+            signer={signer}
+            userAddress={userAddress}
+            inventory={inventoryMgmt.inventory}
+            tokenBalance={tokenBalance}
+            onRefreshInventory={inventoryMgmt.fetchInventory}
+            onRefreshBalance={fetchBalance}
+          />
+        )}
+
         {agentCreation.showAgentCreationModal && agentCreation.selectedAgentClass && (
           <AgentCreationModal
             selectedAgentClass={agentCreation.selectedAgentClass}
@@ -462,6 +476,19 @@ function App() {
             onClose={() => inventoryMgmt.setSelectedTokenId(null)}
             onTransferTargetChange={inventoryMgmt.setTransferTarget}
             onTransfer={() => inventoryMgmt.transferItem(inventoryMgmt.selectedTokenId!)}
+            onListItem={async (tokenId: string, price: string) => {
+              await marketplace.listItem(
+                tokenId,
+                price,
+                GAME_ITEM_ADDRESS,
+                GameItemABI,
+                async () => {
+                  await fetchBalance()
+                  await inventoryMgmt.fetchInventory()
+                  inventoryMgmt.setSelectedTokenId(null)
+                }
+              )
+            }}
             getItemStats={getItemStats}
           />
         )}
@@ -485,6 +512,19 @@ function App() {
             onUnequip={unequipAgent}
             onSendQuest={(tokenId, duration) => questSystem.sendAgentOnQuest(tokenId, duration, inventoryMgmt.fetchInventory)}
             onPreviewRewards={questSystem.previewQuestRewards}
+            onListItem={async (tokenId: string, price: string) => {
+              await marketplace.listItem(
+                tokenId,
+                price,
+                GAME_ITEM_ADDRESS,
+                GameItemABI,
+                async () => {
+                  await fetchBalance()
+                  await inventoryMgmt.fetchInventory()
+                  inventoryMgmt.setAgentBeingViewed(null)
+                }
+              )
+            }}
           />
         )}
       </div>

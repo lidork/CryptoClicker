@@ -20,6 +20,7 @@ interface AgentDetailsModalProps {
   onUnequip: () => void;
   onSendQuest: (tokenId: string, duration: number) => void;
   onPreviewRewards: (tokenId: string) => void;
+  onListItem?: (tokenId: string, price: string) => Promise<void>;
 }
 
 export function AgentDetailsModal({
@@ -39,9 +40,12 @@ export function AgentDetailsModal({
   onEquip,
   onUnequip,
   onSendQuest,
-  onPreviewRewards
+  onPreviewRewards,
+  onListItem
 }: AgentDetailsModalProps) {
   const [currentTime, setCurrentTime] = useState(() => Math.floor(Date.now() / 1000));
+  const [listPrice, setListPrice] = useState('');
+  const [isListing, setIsListing] = useState(false);
   
   // Load history when modal opens
   useEffect(() => {
@@ -317,6 +321,43 @@ export function AgentDetailsModal({
                 </p>
               ))
             )}
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'left', borderTop: '1px solid #444', paddingTop: '1.5rem', marginBottom: '1.5rem' }}>
+          <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>🛍️ List on Marketplace</h4>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="number"
+              placeholder="Price in CLK"
+              value={listPrice}
+              onChange={(e) => setListPrice(e.target.value)}
+              min="0.1"
+              step="0.1"
+              style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: 'white' }}
+            />
+            <button 
+              onClick={async () => {
+                if (onListItem && listPrice && parseFloat(listPrice) > 0) {
+                  setIsListing(true);
+                  try {
+                    await onListItem(selectedAgentDetails.tokenId, listPrice);
+                    setListPrice('');
+                  } finally {
+                    setIsListing(false);
+                  }
+                }
+              }}
+              disabled={!listPrice || parseFloat(listPrice) <= 0 || isListing || !onListItem}
+              style={{ 
+                background: isListing ? '#555' : '#4ade80', 
+                flexShrink: 0,
+                cursor: (!listPrice || parseFloat(listPrice) <= 0 || isListing || !onListItem) ? 'not-allowed' : 'pointer',
+                opacity: (!listPrice || parseFloat(listPrice) <= 0 || isListing || !onListItem) ? 0.5 : 1
+              }}
+            >
+              {isListing ? '⏳ Listing...' : '📤 List'}
+            </button>
           </div>
         </div>
 

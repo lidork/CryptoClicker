@@ -85,3 +85,21 @@ export const GameItemABI = [
   "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
   "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)"
 ];
+
+export const MarketplaceABI = [
+  // Listing Functions
+  "function listItem(uint256 tokenId, uint256 price) external",
+  "function purchaseItem(uint256 listingId) external",
+  "function cancelListing(uint256 listingId) external",
+  
+  // View Functions
+  "function getListing(uint256 listingId) view returns (tuple(address seller, uint256 tokenId, uint256 price, uint256 listedAt, uint8 status))",
+  "function getSellerListings(address seller) view returns (uint256[])",
+  "function getListingCounter() view returns (uint256)",
+  "function isListingActive(uint256 listingId) view returns (bool)",
+  
+  // Events
+  "event ItemListed(address indexed seller, uint256 indexed tokenId, uint256 price, uint256 indexed listingId, uint256 timestamp)",
+  "event ItemPurchased(address indexed buyer, address indexed seller, uint256 indexed tokenId, uint256 price, uint256 listingId, uint256 timestamp)",
+  "event ListingCancelled(address indexed seller, uint256 indexed listingId, uint256 tokenId, uint256 timestamp)"
+];

@@ -45,6 +45,23 @@ export interface ShopItem {
   uri: string;
 }
 
+export interface MarketplaceListing {
+  id: string;
+  seller: string;
+  tokenId: string;
+  price: string;
+  listedAt: number;
+  itemDetails: InventoryItem;
+}
+
+export interface UserListing {
+  id: string;
+  tokenId: string;
+  price: string;
+  listedAt: number;
+  itemDetails: InventoryItem;
+}
+
 export interface AgentClassConfig {
   name: string;
   description: string;

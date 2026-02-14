@@ -1,6 +1,6 @@
 interface NavigationBarProps {
-  currentScreen: 'game' | 'shop' | 'agents' | 'inventory';
-  onChange: (screen: 'game' | 'shop' | 'agents' | 'inventory') => void;
+  currentScreen: 'game' | 'shop' | 'agents' | 'inventory' | 'marketplace';
+  onChange: (screen: 'game' | 'shop' | 'agents' | 'inventory' | 'marketplace') => void;
 }
 
 export function NavigationBar({ currentScreen, onChange }: NavigationBarProps) {
@@ -29,6 +29,12 @@ export function NavigationBar({ currentScreen, onChange }: NavigationBarProps) {
         style={{ backgroundColor: currentScreen === 'inventory' ? '#646cff' : '#1a1a1a' }}
       >
         🎒 Inventory
+      </button>
+      <button
+        onClick={() => onChange('marketplace')}
+        style={{ backgroundColor: currentScreen === 'marketplace' ? '#646cff' : '#1a1a1a' }}
+      >
+        🛍️ Marketplace
       </button>
     </nav>
   );

@@ -47,17 +47,19 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
               if (isAgent) {
                 try {
                   const stats = await gameItemContract.getAgentStats(tokenId)
+                  // Destructure tuple: [level, miningRate, creationTime, experience, strength, agentClass, xpGainVariance]
+                  const [level, miningRate, , experience, strength, agentClass, xpGainVariance] = stats
                   
                   return {
                     id: tokenId.toString(),
                     uri,
-                    strength: Number(stats.strength),
+                    strength: Number(strength),
                     isAgent: true,
-                    agentClass: stats.agentClass,
-                    level: Number(stats.level),
-                    miningRate: Number(stats.miningRate),
-                    experience: Number(stats.experience),
-                    xpGainVariance: Number(stats.xpGainVariance)
+                    agentClass: agentClass,
+                    level: Number(level),
+                    miningRate: Number(miningRate),
+                    experience: Number(experience),
+                    xpGainVariance: Number(xpGainVariance)
                   }
                 } catch (agentErr) {
                   console.error(`Failed to fetch agent ${tokenId} stats:`, agentErr)
@@ -104,10 +106,23 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     try {
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
       
-      // Note: getItemHistory is in ABI but not implemented in current contract
-      // Silently default to empty history
-      const history: ItemHistoryRecord[] = []
-      setSelectedItemHistory(history)
+      // Fetch Transfer events for this token to build ownership history
+      try {
+        const filter = gameItemContract.filters.Transfer(null, null, tokenId)
+        const events = await gameItemContract.queryFilter(filter, 0)
+        
+        const history: ItemHistoryRecord[] = events.map((event) => ({
+          // @ts-expect-error Ethers event args
+          from: event.args[0],
+          // @ts-expect-error Ethers event args
+          to: event.args[1]
+        }))
+        
+        setSelectedItemHistory(history)
+      } catch (e) {
+        console.warn("Could not fetch transfer history", e)
+        setSelectedItemHistory([])
+      }
 
       let meta = { purchasePrice: 0, mintDate: 0, originalCreator: "Unknown", strength: 0 }
       try {
@@ -136,22 +151,38 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
       
       const agentStats = await gameItemContract.getAgentStats(tokenId)
+      // Destructure tuple: [level, miningRate, creationTime, experience, strength, agentClass, xpGainVariance]
+      const [level, miningRate, creationTime, experience, strength, agentClass, xpGainVariance] = agentStats
       
       setSelectedAgentDetails({
         tokenId,
-        level: Number(agentStats.level),
-        miningRate: Number(agentStats.miningRate),
-        creationTime: Number(agentStats.creationTime),
-        experience: Number(agentStats.experience),
-        strength: Number(agentStats.strength),
-        agentClass: agentStats.agentClass,
-        xpGainVariance: Number(agentStats.xpGainVariance)
+        level: Number(level),
+        miningRate: Number(miningRate),
+        creationTime: Number(creationTime),
+        experience: Number(experience),
+        strength: Number(strength),
+        agentClass: agentClass,
+        xpGainVariance: Number(xpGainVariance)
       })
       setAgentBeingViewed(tokenId)
 
-      // Agents don't have transfer history in current implementation
-      const normalizedHistory: ItemHistoryRecord[] = []
-      setSelectedItemHistory(normalizedHistory)
+      // Fetch Transfer events for ownership history
+      try {
+        const filter = gameItemContract.filters.Transfer(null, null, tokenId)
+        const events = await gameItemContract.queryFilter(filter, 0)
+        
+        const normalizedHistory: ItemHistoryRecord[] = events.map((event) => ({
+          // @ts-expect-error Ethers event args
+          from: event.args[0],
+          // @ts-expect-error Ethers event args
+          to: event.args[1]
+        }))
+        
+        setSelectedItemHistory(normalizedHistory)
+      } catch (e) {
+        console.warn("Could not fetch transfer history for agent", e)
+        setSelectedItemHistory([])
+      }
     } catch (e) {
       console.error("Error fetching agent details:", e)
       toast.error("Failed to fetch agent details")

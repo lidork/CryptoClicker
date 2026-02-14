@@ -19,5 +19,7 @@ export default buildModule("ClickerGameModule", (m) => {
     }
   });
 
-  return { clickerToken, gameItem };
+  const marketplace = m.contract("Marketplace", [gameItem, clickerToken]);
+
+  return { clickerToken, gameItem, marketplace };
 });
