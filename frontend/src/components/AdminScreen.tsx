@@ -155,6 +155,9 @@ export function AdminScreen({
       if (gameItemOwner) {
         addressLabels.set(gameItemOwner.toLowerCase(), "Game Owner")
       }
+      if (ZeroAddress) {
+        addressLabels.set(ZeroAddress.toLowerCase(), "Burned Tokens (Zero Address)")
+      }
 
       const filter = tokenContract.filters.Transfer()
       const events = await tokenContract.queryFilter(filter, 0)

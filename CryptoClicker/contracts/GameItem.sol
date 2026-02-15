@@ -326,6 +326,8 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         emit AgentSentOnQuest(tokenId, msg.sender, questDuration, block.timestamp + questDuration);
     }
 
+    // Complete quest and distribute rewards based on duration, agent stats, and random seed
+
     function completeQuest(uint256 tokenId) external {
         QuestInfo storage quest = agentQuests[tokenId];
         require(quest.isOnQuest, "E6");
@@ -350,8 +352,11 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         agent.experience += xpGained;
         _checkLevelUp(tokenId);
         
-        // Mint tokens
-        require(paymentToken.transfer(msg.sender, tokens), "E9");
+        // Mint quest reward tokens directly to player
+        (bool success, ) = address(paymentToken).call(
+            abi.encodeWithSignature("questRewardMint(address,uint256)", msg.sender, tokens)
+        );
+        require(success, "E9");
         
         // Mint loot item if earned
         if (bytes(itemUri).length > 0) {
@@ -385,6 +390,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         );
     }
 
+// Admin function to mint quest reward loot directly (for testing or special events)
     function _mintQuestLoot(address recipient, string memory uri) internal {
         uint256 tokenId = _nextTokenId++;
         _mint(recipient, tokenId);

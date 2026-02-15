@@ -166,7 +166,7 @@ export function AgentDetailsModal({
               </p>
               
               {/* Progress Bar */}
-              {questEndTime && questDuration && (
+              {questEndTime && questEndTime > 0 && questDuration && questDuration > 0 ? (
                 <div style={{ margin: '0.75rem 0' }}>
                   <div style={{ 
                     background: '#222', 
@@ -204,7 +204,7 @@ export function AgentDetailsModal({
                     })()}
                   </p>
                 </div>
-              )}
+              ) : null}
               
               {canCompleteQuest ? (
                 <button 

@@ -99,6 +99,17 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         emit TokensBurned(from, amount);
     }
     
+    // Quest reward mint - only callable by GameItem contract (authorized burner)
+    // This allows quest rewards to be minted without going through the normal user mint flow
+    function questRewardMint(address to, uint256 amount) external {
+        require(msg.sender == authorizedBurner, "Only GameItem contract can mint quest rewards");
+        require(to != address(0), "Cannot mint to zero address");
+        require(amount > 0, "Amount must be greater than 0");
+        require(totalSupply() + amount <= MAX_SUPPLY, "Max supply exceeded");
+        
+        _mint(to, amount);
+    }
+    
     // Set the authorized burner address (should be GameItem contract)
     function setAuthorizedBurner(address _burner) external onlyOwner {
         require(_burner != address(0), "Burner cannot be zero address");

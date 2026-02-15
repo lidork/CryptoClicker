@@ -12,6 +12,7 @@ export const ClickerTokenABI = [
   // PHASE 3: Updated mint function with ECDSA signature validation
   "function mint(address to, uint256 amount, bytes signature, uint256 nonce) public",
   "function ownerMint(address to, uint256 amount) public", // Owner-only minting function
+  "function questRewardMint(address to, uint256 amount) external", // Quest reward minting (only for GameItem)
   
   // PHASE 3: Validator management and nonce tracking
   "function validator() view returns (address)",
