@@ -7,7 +7,7 @@ interface AgentsScreenProps {
   isCreatingAgent: boolean;
   selectedAgentClass: string | null;
   onOpenCreateModal: (agentClass: string) => void;
-  agentMintCost: number;
+  dynamicAgentPrices: Record<string, string>;
 }
 
 export function AgentsScreen({
@@ -17,19 +17,20 @@ export function AgentsScreen({
   isCreatingAgent,
   selectedAgentClass,
   onOpenCreateModal,
-  agentMintCost
+  dynamicAgentPrices
 }: AgentsScreenProps) {
   return (
     <div className="agents-section">
       <h2>🤖 Create Agents (ERC-8004 Identity)</h2>
       <p style={{ color: '#aaa', marginBottom: '20px' }}>
         Agents are persistent, leveling NFTs with two modes: <strong>Equipped</strong> (boosts your clicking) or <strong>On Quest</strong> (earns CLK tokens). 
-        Each agent has randomized XP variance affecting leveling speed. Cost: {agentMintCost} CLK per agent.
+        Each agent has randomized XP variance affecting leveling speed. Prices increase with demand (bonding curve).
       </p>
 
       <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
         {agentClasses.map((agentClass) => {
-          const canAfford = parseFloat(tokenBalance) >= agentMintCost;
+          const livePrice = dynamicAgentPrices[agentClass.name] || '500';
+          const canAfford = parseFloat(tokenBalance) >= parseFloat(livePrice);
           const supply = agentSupplies[agentClass.name] || 0;
 
           return (
@@ -59,13 +60,19 @@ export function AgentsScreen({
                   <strong>📊 Supply:</strong> {supply} created
                 </p>
               </div>
+              
+              <p style={{ marginBottom: '10px' }}>
+                Price: <strong style={{ color: canAfford ? '#4ade80' : '#ef4444' }}>{livePrice} CLK</strong>
+              </p>
 
               <button
                 onClick={() => onOpenCreateModal(agentClass.name)}
                 disabled={!canAfford || isCreatingAgent}
                 style={{ width: '100%', marginBottom: '10px' }}
               >
-                {isCreatingAgent && selectedAgentClass === agentClass.name ? "Creating..." : "Create"}
+                {isCreatingAgent && selectedAgentClass === agentClass.name 
+                  ? "Creating..." 
+                  : "Create"}
               </button>
             </div>
           );

@@ -1,10 +1,17 @@
-export const CLICKER_TOKEN_ADDRESS = "0x5ae5E5E3a800ee4e2062755d0568bAbfBB912cf3";
-export const GAME_ITEM_ADDRESS = "0x52041bc553CA6062BF399F532074a8c9041F71Cb";
-export const MARKETPLACE_ADDRESS = "0xD91B07C849260741D339F61A0FA55C2b3aa4CfE2"; // TODO: Update after deployment
+export const CLICKER_TOKEN_ADDRESS = "0xd923AB344141480dD8cCDc526adbeD85753f2083";
+export const GAME_ITEM_ADDRESS = "0xf949d3Bea2524c9cc40f1442EB769b579B2A981e";
+export const MARKETPLACE_ADDRESS = "0xfd31C5233C93d40E496125C10E44469FF05e5257"; 
 
 // Signer Service API (ERC-8004 Validator)
 export const SIGNER_API_URL = import.meta.env.VITE_SIGNER_API || 'http://localhost:3001';
 export const VALIDATOR_ADDRESS = "0xc94EdD970dff7fFb3f500969d15632EF1E5Bb2ab";
+
+export const KNOWN_ADDRESS_LABELS: Record<string, string> = {
+    [CLICKER_TOKEN_ADDRESS.toLowerCase()]: "Token Contract",
+    [GAME_ITEM_ADDRESS.toLowerCase()]: "GameItem Contract",
+    [MARKETPLACE_ADDRESS.toLowerCase()]: "Marketplace Contract",
+    [VALIDATOR_ADDRESS.toLowerCase()]: "Validator Service"
+};
 
 export const CLICKS_PER_TOKEN = 10; // How many clicks to earn 1 token
 
@@ -40,7 +47,6 @@ export const AGENT_CLASSES = [
     }
 ];
 
-export const AGENT_MINT_COST = 500; // CLK tokens to create an agent
 
 // Quest system
 export const QUEST_DURATIONS = {
@@ -48,11 +54,4 @@ export const QUEST_DURATIONS = {
   MEDIUM: { seconds: 21600, label: "6 Hours", multiplier: 3 },
   LONG: { seconds: 86400, label: "24 Hours", multiplier: 8 },
   DEBUG: { seconds: 60, label: "1 Minute (Debug)", multiplier: 0.1 }
-};
-
-export const LOOT_RARITIES = {
-  COMMON: { chance: 60, color: "#9ca3af", label: "Common" },
-  UNCOMMON: { chance: 25, color: "#4ade80", label: "Uncommon" },
-  RARE: { chance: 12, color: "#3b82f6", label: "Rare" },
-  EPIC: { chance: 3, color: "#a855f7", label: "Epic" }
 };

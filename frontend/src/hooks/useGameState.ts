@@ -13,6 +13,14 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
   const [passiveIncome, setPassiveIncome] = useState(0)
   const [isPayoutProcessing, setIsPayoutProcessing] = useState(false)
 
+  useEffect(() => {
+    if (!userAddress) {
+      setClickCount(0)
+      setUnclaimedClicks(0)
+      setIsPayoutProcessing(false)
+    }
+  }, [userAddress])
+
   // Calculate Game Bonuses based on Inventory and Agent
   useEffect(() => {
     let newMultiplier = 1
@@ -82,6 +90,8 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
       tokensToMint = 10
     }
 
+    const clicksToMint = tokensToMint * CLICKS_PER_TOKEN
+
     setIsPayoutProcessing(true)
 
     try {
@@ -99,7 +109,7 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userAddress,
-          clickCount: unclaimedClicks,
+          clickCount: clicksToMint,
           nonce: Number(nonce)
         })
       })
@@ -109,7 +119,8 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
         throw new Error(error.error || 'Failed to get signature from validator')
       }
 
-      const { signature, amount: validatedAmount } = await signResponse.json()
+      const { signature, amount: validatedAmount, clkAmount } = await signResponse.json()
+      const mintedTokens = Number(clkAmount) || tokensToMint
       console.log("Signature obtained from validator:", signature)
       
       const txPromise = async () => {
@@ -122,13 +133,13 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
       await toast.promise(
         txPromise(),
         {
-          pending: `Minting ${tokensToMint} tokens with signature validation...`,
-          success: `✅ Successfully minted ${tokensToMint} tokens! Signature verified on-chain.`,
+          pending: `Minting ${mintedTokens} tokens with signature validation...`,
+          success: `✅ Successfully minted ${mintedTokens} tokens! Signature verified on-chain.`,
           error: 'Transaction failed'
         }
       )
       
-      setUnclaimedClicks((prev) => prev - (tokensToMint * CLICKS_PER_TOKEN))
+      setUnclaimedClicks((prev) => prev - (mintedTokens * CLICKS_PER_TOKEN))
       
       // Refresh balance after successful mint
       if (fetchBalance) {

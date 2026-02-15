@@ -11,21 +11,26 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
-    // PHASE 3: ERC-8004 Lite - Validator for Anti-Cheat
+    // alidator for Anti-Cheat
     address public validator;
     mapping(address => uint256) public nonces;
+    
+    // Authorized burner (GameItem contract)
+    address public authorizedBurner;
 
     // Events for validator changes
     event ValidatorUpdated(address indexed oldValidator, address indexed newValidator);
     event MintValidated(address indexed user, uint256 amount, uint256 nonce);
+    event TokensBurned(address indexed from, uint256 amount);
+    event AuthorizedBurnerUpdated(address indexed oldBurner, address indexed newBurner);
 
-    // PROTECTION: Global Hard Limit on tokens (1 Million)
+    //Global Hard Limit on tokens (1 Million)
     uint256 public constant MAX_SUPPLY = 1_000_000 * 10**18;
     
-    // PROTECTION: Limit how many tokens can be minted in one transaction to prevent draining
-    uint256 public constant MAX_MINT_PER_TX = 100 * 10**18;
+    //Limit how many tokens can be minted in one transaction to prevent draining
+    uint256 public constant MAX_MINT_PER_TX = 10 * 10**18;
 
-    // PROTECTION: Cooldown mechanism to prevent bot spamming
+    // Cooldown mechanism to prevent bot spamming
     // Mapping to track the last time a user minted
     mapping(address => uint256) public lastMintTime;
     uint256 public constant COOLDOWN_TIME = 1 minutes;
@@ -37,16 +42,15 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     // Public mint function that anyone can call, but with restrictions
-    // PHASE 3: Now requires ECDSA signature from authorized validator
+    // requires ECDSA signature from authorized validator
     function mint(address to, uint256 amount, bytes memory signature, uint256 nonce) public nonReentrant {
-        // PROTECTION: Input validation
+        // Input validation
         require(amount > 0, "Amount must be greater than 0");
         require(to != address(0), "Cannot mint to zero address");
 
-        // PHASE 3: Nonce validation (prevents replay attacks)
         require(nonce == nonces[msg.sender], "Invalid nonce");
 
-        // PHASE 3: Signature validation (anti-cheat)
+        // Signature validation (anti-cheat)
         bytes32 messageHash = keccak256(abi.encodePacked(msg.sender, amount, nonce));
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         address recoveredSigner = ethSignedMessageHash.recover(signature);
@@ -56,16 +60,11 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         nonces[msg.sender]++;
         emit MintValidated(msg.sender, amount, nonce);
 
-        // PROTECTION: Rate Limiting
+        // limits and caps
         require(block.timestamp >= lastMintTime[msg.sender] + COOLDOWN_TIME, "Cooldown: You must wait 1 minute between mints");
-
-        // PROTECTION: Transaction Cap
         require(amount <= MAX_MINT_PER_TX, "Exceeds max mint per transaction");
-
-        // PROTECTION: Supply Cap
         require(totalSupply() + amount <= MAX_SUPPLY, "Max supply exceeded");
 
-        // Update the cooldown timer for the caller
         lastMintTime[msg.sender] = block.timestamp;
 
         _mint(to, amount);
@@ -77,7 +76,7 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         _mint(to, amount);
     }
 
-    // PHASE 3: Admin function to update the validator address
+    //Admin function to update the validator address
     function setValidator(address _newValidator) external onlyOwner {
         require(_newValidator != address(0), "Validator cannot be zero address");
         address oldValidator = validator;
@@ -85,8 +84,26 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         emit ValidatorUpdated(oldValidator, _newValidator);
     }
 
-    // PHASE 3: View function to get current nonce for a user
+    // View function to get current nonce for a user
     function getNonce(address user) external view returns (uint256) {
         return nonces[user];
+    }
+    
+    // Burn function - only callable by authorized burner (GameItem contract)
+    function burn(address from, uint256 amount) external {
+        require(msg.sender == authorizedBurner, "Only authorized burner can burn tokens");
+        require(from != address(0), "Cannot burn from zero address");
+        require(amount > 0, "Amount must be greater than 0");
+        
+        _burn(from, amount);
+        emit TokensBurned(from, amount);
+    }
+    
+    // Set the authorized burner address (should be GameItem contract)
+    function setAuthorizedBurner(address _burner) external onlyOwner {
+        require(_burner != address(0), "Burner cannot be zero address");
+        address oldBurner = authorizedBurner;
+        authorizedBurner = _burner;
+        emit AuthorizedBurnerUpdated(oldBurner, _burner);
     }
 }

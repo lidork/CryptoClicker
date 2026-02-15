@@ -240,15 +240,18 @@ export function useMarketplace(
     }
 
     const priceWei = parseEther(priceInCLK)
+    // Calculate total cost including 10% platform fee
+    const platformFee = (priceWei * 10n) / 100n
+    const totalCost = priceWei + platformFee
 
     try {
-      // First, approve marketplace to transfer CLK tokens
+      // First, approve marketplace to transfer CLK tokens (price + 10% fee)
       const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer)
       const allowance = await tokenContract.allowance(userAddress, MARKETPLACE_ADDRESS)
 
-      if (allowance < priceWei) {
-        toast.info("Please approve the marketplace to spend CLK tokens...")
-        const txApprove = await tokenContract.approve(MARKETPLACE_ADDRESS, priceWei)
+      if (allowance < totalCost) {
+        toast.info(`Approving ${formatEther(totalCost)} CLK (${priceInCLK} + 10% platform fee)...`)
+        const txApprove = await tokenContract.approve(MARKETPLACE_ADDRESS, totalCost)
         await toast.promise(
           txApprove.wait(),
           { pending: "Approving CLK transfer...", success: "Approved!", error: "Approval failed" }

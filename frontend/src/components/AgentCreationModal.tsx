@@ -2,7 +2,7 @@ interface AgentCreationModalProps {
   selectedAgentClass: string;
   tokenBalance: string;
   isCreatingAgent: boolean;
-  agentMintCost: number;
+  currentPrice: string;
   onConfirm: (agentClass: string) => void;
   onClose: () => void;
 }
@@ -11,7 +11,7 @@ export function AgentCreationModal({
   selectedAgentClass,
   tokenBalance,
   isCreatingAgent,
-  agentMintCost,
+  currentPrice,
   onConfirm,
   onClose
 }: AgentCreationModalProps) {
@@ -51,10 +51,10 @@ export function AgentCreationModal({
             <strong>Agent Class:</strong> {selectedAgentClass}
           </p>
           <p style={{ margin: '8px 0' }}>
-            <strong>Creation Cost:</strong> {agentMintCost} CLK
+            <strong>Creation Cost:</strong> <span style={{ color: '#4ade80', fontSize: '1.2em' }}>{currentPrice} CLK</span>
           </p>
           <p style={{ margin: '8px 0' }}>
-            <strong>Your Balance:</strong> {tokenBalance} CLK
+            <strong>Your Balance:</strong> <span style={{ color: parseFloat(tokenBalance) >= parseFloat(currentPrice) ? '#4ade80' : '#ef4444' }}>{tokenBalance} CLK</span>
           </p>
           <p style={{ margin: '8px 0', color: '#ffa500', fontSize: '0.9em' }}>
             ⚠️ This agent will have a randomized XP gain rate. Some level faster, others slower!

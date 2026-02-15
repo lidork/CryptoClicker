@@ -30,7 +30,11 @@ export function LeaderboardModal({ leaderboard, onClose }: LeaderboardModalProps
         <h2 style={{ color: 'gold', textAlign: 'center', marginTop: 0 }}>🏆 Top Holders</h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {leaderboard.map((entry, index) => (
+          {leaderboard.map((entry, index) => {
+            const displayName = entry.label
+              ? entry.label
+              : `${entry.address.slice(0, 6)}...${entry.address.slice(-4)}`
+            return (
             <div
               key={entry.address}
               style={{
@@ -42,10 +46,11 @@ export function LeaderboardModal({ leaderboard, onClose }: LeaderboardModalProps
                 border: index === 0 ? '1px solid gold' : 'none'
               }}
             >
-              <span>#{index + 1} {entry.address.slice(0, 6)}...{entry.address.slice(-4)}</span>
+              <span>#{index + 1} {displayName}</span>
               <span style={{ fontWeight: 'bold' }}>{entry.balance} CLK</span>
             </div>
-          ))}
+            )
+          })}
         </div>
 
         <button onClick={onClose} style={{ marginTop: '20px', width: '100%' }}>

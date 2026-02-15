@@ -1,8 +1,8 @@
 {
-  "ClickerGameModule#AgentMathLib": "0xC71abCf3C09b34Fe19b7C9D434aE845604871053",
-  "ClickerGameModule#ClickerToken": "0x5ae5E5E3a800ee4e2062755d0568bAbfBB912cf3",
-  "ClickerGameModule#PricingLib": "0x7d7864c3A92Fa20a0cE8Dc1397742C0dD77d599C",
-  "ClickerGameModule#QuestLootLib": "0xa06462A2EfA68B63750ab5f8389E185623493dAD",
-  "ClickerGameModule#GameItem": "0x52041bc553CA6062BF399F532074a8c9041F71Cb",
-  "ClickerGameModule#Marketplace": "0xD91B07C849260741D339F61A0FA55C2b3aa4CfE2"
+  "ClickerGameModule#AgentMathLib": "0x4d403cb14a78df806125E62eAE175cdA314820A3",
+  "ClickerGameModule#ClickerToken": "0xd923AB344141480dD8cCDc526adbeD85753f2083",
+  "ClickerGameModule#PricingLib": "0x7cB0DCf31Aba35d934550A8bA424bFc71a398de5",
+  "ClickerGameModule#QuestLootLib": "0x42391f07068c163a0bd05A4a2600a1d6327c885D",
+  "ClickerGameModule#GameItem": "0xf949d3Bea2524c9cc40f1442EB769b579B2A981e",
+  "ClickerGameModule#Marketplace": "0xfd31C5233C93d40E496125C10E44469FF05e5257"
 }

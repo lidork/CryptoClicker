@@ -50,9 +50,11 @@ export function MarketplaceScreen({
   const handlePurchaseItem = async (listing: MarketplaceListing) => {
     const currentBalance = parseFloat(tokenBalance)
     const listingPrice = parseFloat(listing.price)
+    const platformFee = listingPrice * 0.10
+    const totalCost = listingPrice + platformFee
 
-    if (currentBalance < listingPrice) {
-      toast.error(`Insufficient CLK! Need ${listingPrice} CLK`)
+    if (currentBalance < totalCost) {
+      toast.error(`Insufficient CLK! Need ${totalCost.toFixed(2)} CLK (${listingPrice} + 10% fee)`)
       return
     }
 
@@ -86,7 +88,13 @@ export function MarketplaceScreen({
     }
   }
 
-  const renderListingCard = (listing: MarketplaceListing, isOwnListing: boolean = false) => (
+  const renderListingCard = (listing: MarketplaceListing, isOwnListing: boolean = false) => {
+    const listingPrice = parseFloat(listing.price)
+    const platformFee = listingPrice * 0.10
+    const totalCost = listingPrice + platformFee
+    const canAfford = parseFloat(tokenBalance) >= totalCost
+    
+    return (
     <div key={listing.id} style={styles.listingCard}>
       <div style={styles.itemImage}>
         {listing.itemDetails.isAgent ? '👥' : '🎁'}
@@ -100,6 +108,11 @@ export function MarketplaceScreen({
         </p>
         <p style={styles.priceInfo}>
           <strong>Price: {listing.price} CLK</strong>
+          {!isOwnListing && (
+            <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
+              + {platformFee.toFixed(2)} CLK fee = {totalCost.toFixed(2)} CLK total
+            </span>
+          )}
         </p>
         <p style={styles.timestamp}>
           Listed: {new Date(listing.listedAt * 1000).toLocaleDateString()}
@@ -115,18 +128,18 @@ export function MarketplaceScreen({
       ) : (
         <button
           onClick={() => handlePurchaseItem(listing)}
-          disabled={parseFloat(tokenBalance) < parseFloat(listing.price)}
+          disabled={!canAfford}
           style={{
             ...styles.buyButton,
-            opacity: parseFloat(tokenBalance) < parseFloat(listing.price) ? 0.5 : 1,
-            cursor: parseFloat(tokenBalance) < parseFloat(listing.price) ? 'not-allowed' : 'pointer'
+            opacity: canAfford ? 1 : 0.5,
+            cursor: canAfford ? 'pointer' : 'not-allowed'
           }}
         >
           💰 Buy
         </button>
       )}
     </div>
-  )
+  )}
 
   return (
     <div style={styles.container}>

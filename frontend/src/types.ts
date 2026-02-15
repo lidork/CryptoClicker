@@ -25,6 +25,7 @@ export interface InventoryItem {
 export interface LeaderboardEntry {
   address: string;
   balance: string;
+  label?: string;
 }
 
 export interface AgentDetails {

@@ -1,6 +1,17 @@
-# Crypto Clicker
+# Crypto Clicker - Final Release
 
-> **Readme Written by GitHub Copilot**
+> A blockchain-based idle clicker game combining gameplay with Web3 economics, anti-cheat validation, and deflationary tokenomics.
+
+## Overview
+
+Crypto Clicker is a fully functional decentralized game that merges traditional clicker mechanics with Ethereum smart contracts. Players earn **ClickerTokens (CLK)** through gameplay clicks, spend them on NFT items and agents, and participate in a deflationary economy where 90% of all purchases are burned, rewarding the game owner with 10% commission.
+
+**Status**: Final Release (Production Ready) ✅  
+**Network**: Sepolia Testnet  
+**Token Contract**: ERC-20 (ClickerToken.sol)  
+**Asset Contracts**: ERC-721 Hybrid (GameItem.sol) with ERC-8004 Lite implementation, Marketplace (Marketplace.sol)
+
+---
 
 ## 1. Project Details
 Crypto Clicker is a decentralized application (dApp) game that combines the addictive nature of clicker games with blockchain technology. Players earn "clicks" by interacting with the game, which can be converted into **ClickerTokens (CLK)**, an ERC-20 cryptocurrency.
@@ -9,20 +20,67 @@ These tokens can be spent in the in-game shop to mint unique **NFT Game Items (E
 
 The project demonstrates a full-stack Web3 architecture, featuring on-chain asset ownership, history tracking for items, and interaction between a React frontend and Ethereum smart contracts.
 
-## 2. Project Features
--   **Click-to-Earn Mechanics**: Accumulate clicks and convert them into on-chain ERC-20 tokens.
--   **In-Game Economy**: Use earned tokens to purchase items from the decentralized shop.
--   **Functional NFTs**:
-    -   **Sword of Clicking**: Increases click multiplier (+1).
-    -   **Shield of Holding**: Generates passive income (1 click/sec).
-    -   **Crown of the Click King**: Massive multiplier bonus (+100).
--   **Asset Provenance**: Full history tracking for Game Items. View the original mint date, creator, and every past owner directly in the inventory UI.
--   **Transfer System**: Definitive ownership allows players to transfer items to other wallets, carrying their game bonuses with them.
--   **Smart Contract Security**: Built-in cooldowns, transaction caps, and reentrancy guards to ensure fair play.
--   **Agent System**: Create and manage agents with stats, leveling, experience, and quests. View full agent history and reputation metrics.
--   **Validator Service**: Backend anti-cheat system using ECDSA signatures for secure token minting.
+## 2. Core Features
 
-## 3. Tech Used
+### Click-to-Earn with Anti-Cheat
+- **Gameplay**: Click to accumulate CLK tokens
+- **Conversion**: 10 clicks = 1 CLK token
+- **Validator**: ECDSA signature verification via backend (ERC-8004 Lite)
+- **Cooldown**: 1-minute minimum between payouts
+- **Per-Transaction Cap**: Max 10 CLK per payout
+- **Supply Cap**: 1,000,000 CLK hard limit (deflationary via burns)
+
+### Deflationary Tokenomics with Owner Revenue
+- **Economic Model**: 90% burned, 10% to owner on every purchase
+- **Applied To**: Lootbox items + Agent NFTs
+- **Owner Revenue**: Direct commission (10%) + Marketplace fees (10%)
+- **Withdrawal**: One-click admin panel withdrawal
+
+### Dynamic Bonding Curve Pricing
+- **Items**: Base price + increment per purchase
+- **Agents**: Per-class dynamic pricing (500 CLK base + 10 CLK per agent)
+- **Marketplace**: Player-set prices + 10% automatic platform fee
+
+### Functional NFT Assets
+
+**Lootbox Items** (ERC-721, consumable):
+-   **Sword of Clicking**: +0.01 to +0.50 click multiplier
+-   **Shield of Holding**: +0.1 to +5 passive clicks/sec
+-   **Scepter of the Infinite**: +50 multiplier & +20 passive/sec
+
+**Agent NFTs** (ERC-8004 Lite Identity Registry):
+-   **Persistent Identity**: Each agent is a mutable NFT with on-chain identity data (stats, level, mining rate, creation time)
+-   **Leveling & Experience**: Agents gain XP by completing quests, with stats improving per level
+-   **Classes & Specialization**:
+    - **Warrior**: +5% click bonus/level, 0.5 CLK/sec mining
+    - **Guardian**: +10% passive/level, 1 CLK/sec mining
+    - **Sorcerer**: +2% click & +8% passive/level, 2 CLK/sec mining
+-   **Quest System**: Send agents on quests to earn CLK rewards and experience, level up, and unlock stat bonuses
+-   **Transferability**: Full provenance tracking—agents retain their history, stats, and quest logs when transferred between wallets
+-   **Anti-Cheat Validation**: Quest rewards and stat claims are cryptographically verified via ECDSA (ERC-8004 Validation Layer)
+
+### P2P Marketplace with Full Provenance
+- **Trading**: List NFTs (items & agents) at custom prices
+- **Fees**: 10% platform fee auto-deducted from buyer
+- **History**: Full transfer history tracked on-chain with provenance data
+- **Verification**: All trades and ownership changes recorded immutably
+
+### Owner Admin Panel
+- Revenue tracking & withdrawals (commissions + marketplace fees)
+- True leaderboard (all wallets) with burn tracking
+- Debug tools
+- Owner-only access
+
+### Security Features
+- ECDSA signature validation
+- Nonce-based replay protection
+- Cooldown rate limiting
+- ReentrancyGuard
+- Supply cap prevents inflation
+
+---
+
+## 3. Tech Stack
 **Frontend:**
 -   React v19.2.0
 -   TypeScript
@@ -44,7 +102,7 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 -   OpenZeppelin Contracts (ERC20, ERC721, ECDSA, MessageHashUtils)
 -   Sepolia Testnet (Target Network)
 
-## 4. Implementation Status
+## 4. Development Roadmap
 
 ### Phase 1: Easy Improvements (UI/UX)
 - [x] **Error Notifications**: Replace browser `alert()` calls with a toast notification library (e.g., `react-toastify`) for better user experience.
@@ -62,76 +120,108 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 
 ### Phase 4: Advanced Smart Contract Features
 - [x] **Staking System**: Allow users to "stake" their NFTs to earn passive `CLK` tokens without needing to keep the tab open. - added as agents
-- [ ] **Gasless Transactions**: Implement meta-transactions (EIP-2771) so users don't need Sepolia ETH to click/claim (pay gas via relayer).
-- [ ] **Marketplace**: Build a native marketplace contract where users can list items for sale for `CLK` tokens (instead of just transferring them). 
-- [ ] **Owner Payout** Build the infrastructure for the owner of the contracts to get paid back in `CLK` staked/used.
+- [x] **Marketplace**: Build a native marketplace contract where users can list items for sale for `CLK` tokens (instead of just transferring them). 
+- [x] **Owner Payout** Build the infrastructure for the owner of the contracts to get paid back in `CLK` staked/used.
 
-## 5. Installation and Usage
+## 5. Installation & Setup
 
 ### Prerequisites
--   Node.js (v18 or later)
--   MetaMask browser extension installed
--   Some Sepolia ETH (for gas fees on testnet)
+- **Node.js** v18 or later
+- **MetaMask** browser extension (Chrome, Firefox, Brave, Edge)
+- **Sepolia ETH** (testnet funds) — Get from [Sepolia Faucet](https://www.infura.io/faucet/sepolia)
+- **Git** for cloning the repository
 
-### Setup
+### Quick Start (6 Steps)
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd crypto-clicker
-    ```
+#### Step 1: Clone & Navigate
+```bash
+git clone <repository-url>
+cd Final_Project
+```
 
-2.  **Install Dependencies:**
-    You need to install dependencies for both the smart contract workspace and the frontend.
-    ```bash
-    # Install root/contract dependencies
-    npm install
-    
-    # Install frontend dependencies
-    cd frontend
-    npm install
-    cd ..
-    ```
+#### Step 2: Install Smart Contract Dependencies
+```bash
+cd CryptoClicker
+npm install
+```
 
-3.  **Deploy Contracts (Sepolia):**
-    Create a `.env` file in the `CryptoClicker` folder with your `SEPOLIA_URL` and `PRIVATE_KEY`.
-    
-    ```bash
-    cd CryptoClicker
-    npx hardhat ignition deploy ./ignition/modules/ClickerGame.ts --network sepolia
-    ```
-    *Note: If testing locally, start a local node with `npx hardhat node` and deploy without the `--network` flag.*
+#### Step 3: Deploy Contracts to Sepolia
 
-4.  **Configure Frontend:**
-    After deployment, copy the contract addresses printed in the terminal.
-    Open `frontend/src/constants.ts` and update:
-    ```typescript
-    export const CLICKER_TOKEN_ADDRESS = "0xYourDeployedTokenAddress";
-    export const GAME_ITEM_ADDRESS = "0xYourDeployedItemAddress";
-    ```
+Create a `.env` file in the `CryptoClicker` folder:
+```bash
+SEPOLIA_URL=https://sepolia.infura.io/v3/<your-infura-key>
+PRIVATE_KEY=<your-wallet-private-key>
+```
 
-5.  **Set Up Signer Service (ERC-8004 Validator):**
-    The signer service validates gameplay and signs token mint requests.
-    
-    ```bash
-    cd CryptoClicker/signer-service
-    npm install
-    npm start
-    ```
-    
-    The service will run on `http://localhost:3001`.
-    
-    **Important**: Update the validator address in your deployed `ClickerToken` contract:
-    ```bash
-    # Call setValidator() with the validator address shown in signer service logs
-    # Validator Address: 0xc94EdD970dff7fFb3f500969d15632EF1E5Bb2ab
-    ```
-    
-    See [CryptoClicker/signer-service/README.md](CryptoClicker/signer-service/README.md) for more details.
+Then deploy:
+```bash
+npx hardhat ignition deploy ./ignition/modules/ClickerGame.ts --network sepolia
+```
 
-6.  **Run the Game:**
-    ```bash
-    cd frontend
-    npm run dev
-    ```
-    Open your browser to `http://localhost:5173`.
+**Expected Output:**
+```
+✓ Deployment successful
+  Token Contract: 0x...
+  GameItem Contract: 0x...
+  Marketplace Contract: 0x...
+```
+
+**Save these addresses!** You'll need them in Step 5.
+
+#### Step 4: Start the Validator Service (Terminal Window 1)
+
+Keep this running in the background:
+```bash
+cd CryptoClicker/signer-service
+npm install
+npm start
+```
+
+**Expected Output:**
+```
+Signer Service running on http://localhost:3001
+Validator Address: 0xc94EdD970dff7fFb3f500969d15632EF1E5Bb2ab
+```
+
+**Important**: The validator address shown (`0xc94Ed...`) is already hardcoded in the deployment, so no additional configuration is needed.
+
+#### Step 5: Configure Frontend with Contract Addresses
+
+Open `frontend/src/constants.ts` and update the contract addresses:
+```typescript
+export const CLICKER_TOKEN_ADDRESS = "0x<Token-from-Step-3>";
+export const GAME_ITEM_ADDRESS = "0x<GameItem-from-Step-3>";
+export const MARKETPLACE_ADDRESS = "0x<Marketplace-from-Step-3>";
+```
+
+Also verify the validator address matches:
+```typescript
+export const VALIDATOR_ADDRESS = "0xc94EdD970dff7fFb3f500969d15632EF1E5Bb2ab";
+```
+
+#### Step 6: Run the Frontend (Terminal Window 2)
+
+```bash
+cd Final_Project/frontend
+npm install
+npm run dev
+```
+
+**Expected Output:**
+```
+✨ Vite v5.x.x ready in ...
+  Local: http://localhost:5173
+```
+
+Open http://localhost:5173 in your browser and connect MetaMask.
+
+### Troubleshooting Setup
+
+| Issue | Solution |
+|-------|----------|
+| "Validator Service not reachable" | Ensure signer service is running on Terminal 1:
+ `cd CryptoClicker/signer-service && npm start` |
+| "Wrong network" in MetaMask | Switch to **Sepolia** in MetaMask dropdown |
+| "Out of Sepolia ETH" | Request funds from [Sepolia Faucet](https://www.infura.io/faucet/sepolia) |
+| Contract addresses not working | Double-check `frontend/src/constants.ts` matches deployment output |
+| "INFURA_KEY not found" | Ensure `.env` file in `CryptoClicker/` with valid `SEPOLIA_URL` and `PRIVATE_KEY` |

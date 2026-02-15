@@ -19,10 +19,17 @@ export const ClickerTokenABI = [
   "function setValidator(address newValidator) external",
   "function nonces(address user) view returns (uint256)",
   
+  // Burn functionality
+  "function burn(address from, uint256 amount) external",
+  "function setAuthorizedBurner(address burner) external",
+  "function authorizedBurner() view returns (address)",
+  
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "event Approval(address indexed owner, address indexed spender, uint256 value)",
   "event ValidatorUpdated(address indexed oldValidator, address indexed newValidator)",
-  "event MintValidated(address indexed user, uint256 amount, uint256 nonce)"
+  "event MintValidated(address indexed user, uint256 amount, uint256 nonce)",
+  "event TokensBurned(address indexed from, uint256 amount)",
+  "event AuthorizedBurnerUpdated(address indexed oldBurner, address indexed newBurner)"
 ];
 
 export const GameItemABI = [
@@ -43,7 +50,9 @@ export const GameItemABI = [
   // Type & Pricing Functions
   "function getNftType(uint256 tokenId) view returns (uint8)",
   "function getDynamicPrice(string tokenURI, uint256 basePrice) view returns (uint256)",
+  "function getDynamicAgentPrice(string agentClass) view returns (uint256)",
   "function uriSupply(string tokenURI) view returns (uint256)",
+  "function agentClassSupply(string agentClass) view returns (uint256)",
   
   // Lootbox Item Minting
   "function mintLootboxItem(address player, string tokenURI, uint256 basePrice) external returns (uint256)",
@@ -64,11 +73,17 @@ export const GameItemABI = [
   
   // Constants (readable)
   "function PRICE_INCREMENT() view returns (uint256)",
+  "function BASE_AGENT_PRICE() view returns (uint256)",
+  "function AGENT_PRICE_INCREMENT() view returns (uint256)",
   "function XP_PER_LEVEL() view returns (uint256)",
   "function BASE_WARRIOR_RATE() view returns (uint256)",
   "function BASE_GUARDIAN_RATE() view returns (uint256)",
   "function BASE_SORCERER_RATE() view returns (uint256)",
-  "function AGENT_MINT_COST() view returns (uint256)",
+  
+  // Owner Functions
+  "function owner() view returns (address)",
+  "function withdrawFunds() external",
+  "function getAccumulatedFunds() view returns (uint256)",
   
   // Events - Lootbox
   "event LootboxItemMinted(uint256 indexed tokenId, address indexed owner, string itemType, uint256 price, uint256 strength)",
@@ -79,6 +94,9 @@ export const GameItemABI = [
   "event ExperienceGained(uint256 indexed tokenId, uint256 xpAmount, uint256 totalExperience)",
   "event AgentSentOnQuest(uint256 indexed tokenId, address indexed owner, uint256 duration, uint256 endTime)",
   "event AgentReturnedFromQuest(uint256 indexed tokenId, address indexed owner, uint256 xpGained, uint256 tokensEarned, string lootRarity)",
+  "event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp)",
+  "event TokensBurnt(uint256 amount, string purchaseType)",
+  "event OwnerCommission(address indexed owner, uint256 amount, string purchaseType)",
   
   // Standard ERC721 Events
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
@@ -98,8 +116,16 @@ export const MarketplaceABI = [
   "function getListingCounter() view returns (uint256)",
   "function isListingActive(uint256 listingId) view returns (bool)",
   
+  // Owner Functions
+  "function owner() view returns (address)",
+  "function withdrawFees() external",
+  "function getAccumulatedFees() view returns (uint256)",
+  "function PLATFORM_FEE_PERCENTAGE() view returns (uint256)",
+  
   // Events
   "event ItemListed(address indexed seller, uint256 indexed tokenId, uint256 price, uint256 indexed listingId, uint256 timestamp)",
   "event ItemPurchased(address indexed buyer, address indexed seller, uint256 indexed tokenId, uint256 price, uint256 listingId, uint256 timestamp)",
-  "event ListingCancelled(address indexed seller, uint256 indexed listingId, uint256 tokenId, uint256 timestamp)"
+  "event ListingCancelled(address indexed seller, uint256 indexed listingId, uint256 tokenId, uint256 timestamp)",
+  "event PlatformFeeCollected(uint256 indexed listingId, uint256 fee, uint256 timestamp)",
+  "event FeesWithdrawn(address indexed owner, uint256 amount, uint256 timestamp)"
 ];

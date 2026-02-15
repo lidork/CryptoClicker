@@ -6,6 +6,7 @@ import './App.css'
 import { AgentsScreen } from './components/AgentsScreen'
 import { AgentCreationModal } from './components/AgentCreationModal'
 import { AgentDetailsModal } from './components/AgentDetailsModal'
+import { AdminScreen } from './components/AdminScreen'
 import { GameScreen } from './components/GameScreen'
 import { InventoryScreen } from './components/InventoryScreen'
 import { ItemDetailsModal } from './components/ItemDetailsModal'
@@ -15,8 +16,8 @@ import { NavigationBar } from './components/NavigationBar'
 import { RewardPreviewModal } from './components/RewardPreviewModal'
 import { ShopScreen } from './components/ShopScreen'
 import { WalletSection } from './components/WalletSection'
-import { ClickerTokenABI, GameItemABI } from './abis/contractABIs'
-import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS, AGENT_CLASSES, QUEST_DURATIONS } from './constants'
+import { ClickerTokenABI, GameItemABI, MarketplaceABI } from './abis/contractABIs'
+import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, MARKETPLACE_ADDRESS, CLICKS_PER_TOKEN, SHOP_ITEMS, AGENT_CLASSES, QUEST_DURATIONS, VALIDATOR_ADDRESS } from './constants'
 import { useGameState } from './hooks/useGameState'
 import { useQuestSystem } from './hooks/useQuestSystem'
 import { useInventoryManagement } from './hooks/useInventoryManagement'
@@ -35,11 +36,12 @@ function App() {
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null)
   const [userAddress, setUserAddress] = useState<string | null>(null)
   const [showDebug, setShowDebug] = useState(false)
-  const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'agents' | 'inventory' | 'marketplace'>('game')
+  const [currentScreen, setCurrentScreen] = useState<'game' | 'shop' | 'agents' | 'inventory' | 'marketplace' | 'admin'>('game')
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [tokenBalance, setTokenBalance] = useState("0")
   const [equippedAgentId, setEquippedAgentId] = useState<string | null>(null)
+  const [isOwner, setIsOwner] = useState(false)
   
   // Validator information for debug menu
   const [validatorAddress, setValidatorAddress] = useState<string | null>(null)
@@ -63,6 +65,8 @@ function App() {
     setTokenBalance("0")
     inventoryMgmt.setSelectedTokenId(null)
     setEquippedAgentId(null)
+    setIsOwner(false)
+    setCurrentScreen('game')
   }, [inventoryMgmt])
 
   const fetchBalance = useCallback(async () => {
@@ -74,6 +78,32 @@ function App() {
       } catch {
         console.log("Contract not deployed or address incorrect")
       }
+    }
+  }, [signer, userAddress])
+
+  // Check if user is owner of contracts
+  const checkOwnerStatus = useCallback(async () => {
+    if (!signer || !userAddress) return
+    
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
+      const marketplaceContract = new Contract(MARKETPLACE_ADDRESS, MarketplaceABI, signer)
+      
+      const [gameItemOwner, marketplaceOwner] = await Promise.all([
+        gameItemContract.owner(),
+        marketplaceContract.owner()
+      ])
+      
+      const isContractOwner = userAddress.toLowerCase() === gameItemOwner.toLowerCase() || 
+                             userAddress.toLowerCase() === marketplaceOwner.toLowerCase()
+      setIsOwner(isContractOwner)
+      
+      if (isContractOwner) {
+        console.log('✅ Owner access granted')
+      }
+    } catch (error) {
+      console.error('Error checking owner status:', error)
+      setIsOwner(false)
     }
   }, [signer, userAddress])
 
@@ -93,21 +123,19 @@ function App() {
       fetchBalance()
       shopPurchasing.fetchShopPrices()
       inventoryMgmt.fetchInventory()
+      inventoryMgmt.fetchAgentSupplies(AGENT_CLASSES)
+      checkOwnerStatus()
+      agentCreation.fetchAgentPrices(AGENT_CLASSES)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userAddress])
-
-  // Update agent supplies when inventory changes
-  useEffect(() => {
-    inventoryMgmt.fetchAgentSupplies(AGENT_CLASSES)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inventoryMgmt.inventory])
 
   // Listen for account changes
   useEffect(() => {
     if (window.ethereum) {
       const handleAccountsChanged = () => {
         handleDisconnect()
+        setCurrentScreen('game')
         toast.info("Account changed. Please reconnect your wallet.")
       }
       
@@ -232,10 +260,31 @@ function App() {
 
     const provider = new BrowserProvider(window.ethereum)
     const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, provider)
+    const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, provider)
+    const marketplaceContract = new Contract(MARKETPLACE_ADDRESS, MarketplaceABI, provider)
 
     try {
       toast.info("Indexing blockchain events for leaderboard...")
       
+      const [gameItemOwner, marketplaceOwner] = await Promise.all([
+        gameItemContract.owner(),
+        marketplaceContract.owner()
+      ])
+
+      const knownAddresses = new Set([
+        CLICKER_TOKEN_ADDRESS.toLowerCase(),
+        GAME_ITEM_ADDRESS.toLowerCase(),
+        MARKETPLACE_ADDRESS.toLowerCase(),
+        VALIDATOR_ADDRESS.toLowerCase()
+      ])
+
+      const addressLabels = new Map<string, string>()
+      ;[gameItemOwner, marketplaceOwner].forEach((addr) => {
+        if (addr) {
+          addressLabels.set(addr.toLowerCase(), "Game Owner")
+        }
+      })
+
       const filter = tokenContract.filters.Transfer()
       const events = await tokenContract.queryFilter(filter, 0)
 
@@ -258,15 +307,22 @@ function App() {
       })
 
       const sortedList = Object.entries(balances)
-        .map(([addr, bal]) => ({ 
-          address: addr, 
+        .map(([addr, bal]) => ({
+          address: addr,
           balance: parseFloat(formatEther(bal))
         }))
+        .filter((item) => item.balance > 0)
+        .filter((item) => {
+          const lower = item.address.toLowerCase()
+          if (addressLabels.has(lower)) return true
+          return !knownAddresses.has(lower)
+        })
         .sort((a, b) => b.balance - a.balance)
         .slice(0, 10)
-        .map(item => ({ 
-          address: item.address, 
-          balance: item.balance.toFixed(2)
+        .map(item => ({
+          address: item.address,
+          balance: item.balance.toFixed(2),
+          label: addressLabels.get(item.address.toLowerCase())
         }))
 
       setLeaderboard(sortedList)
@@ -332,7 +388,11 @@ function App() {
         onDisconnect={handleDisconnect}
       />
 
-      <NavigationBar currentScreen={currentScreen} onChange={setCurrentScreen} />
+      <NavigationBar 
+        currentScreen={currentScreen} 
+        onChange={setCurrentScreen}
+        isOwner={isOwner}
+      />
 
       <div className="game-area">
         {currentScreen === 'game' && (
@@ -404,7 +464,7 @@ function App() {
               agentCreation.setSelectedAgentClass(agentClass)
               agentCreation.setShowAgentCreationModal(true)
             }}
-            agentMintCost={500}
+            dynamicAgentPrices={agentCreation.dynamicAgentPrices}
           />
         )}
 
@@ -428,12 +488,23 @@ function App() {
           />
         )}
 
+        {currentScreen === 'admin' && (
+          <AdminScreen
+            signer={signer}
+            userAddress={userAddress}
+            tokenBalance={tokenBalance}
+            onRefreshBalance={fetchBalance}
+            onToggleDebug={() => setShowDebug(!showDebug)}
+            showDebug={showDebug}
+          />
+        )}
+
         {agentCreation.showAgentCreationModal && agentCreation.selectedAgentClass && (
           <AgentCreationModal
             selectedAgentClass={agentCreation.selectedAgentClass}
             tokenBalance={tokenBalance}
             isCreatingAgent={agentCreation.isCreatingAgent}
-            agentMintCost={500}
+            currentPrice={agentCreation.dynamicAgentPrices[agentCreation.selectedAgentClass] || '500'}
             onConfirm={(ac) => agentCreation.createAgent(ac, fetchBalance, inventoryMgmt.fetchInventory, inventoryMgmt.fetchAgentSupplies, AGENT_CLASSES)}
             onClose={() => agentCreation.setShowAgentCreationModal(false)}
           />

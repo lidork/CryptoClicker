@@ -44,7 +44,7 @@ app.post('/sign', async (req, res) => {
     
     // Configuration
     const CLICKS_PER_TOKEN = 10; // Should match frontend constant
-    const MAX_TOKENS_PER_TX = 100; // Contract limit: MAX_MINT_PER_TX
+    const MAX_TOKENS_PER_TX = 10; // Contract limit: MAX_MINT_PER_TX
     
     // Input validation
     if (!userAddress || !ethers.isAddress(userAddress)) {

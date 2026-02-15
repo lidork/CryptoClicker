@@ -1,9 +1,10 @@
 interface NavigationBarProps {
-  currentScreen: 'game' | 'shop' | 'agents' | 'inventory' | 'marketplace';
-  onChange: (screen: 'game' | 'shop' | 'agents' | 'inventory' | 'marketplace') => void;
+  currentScreen: 'game' | 'shop' | 'agents' | 'inventory' | 'marketplace' | 'admin';
+  onChange: (screen: 'game' | 'shop' | 'agents' | 'inventory' | 'marketplace' | 'admin') => void;
+  isOwner?: boolean;
 }
 
-export function NavigationBar({ currentScreen, onChange }: NavigationBarProps) {
+export function NavigationBar({ currentScreen, onChange, isOwner = false }: NavigationBarProps) {
   return (
     <nav style={{ display: 'flex', justifyContent: 'center', gap: '20px', margin: '20px 0' }}>
       <button
@@ -36,6 +37,17 @@ export function NavigationBar({ currentScreen, onChange }: NavigationBarProps) {
       >
         🛍️ Marketplace
       </button>
+      {isOwner && (
+        <button
+          onClick={() => onChange('admin')}
+          style={{ 
+            backgroundColor: currentScreen === 'admin' ? '#646cff' : '#1a1a1a',
+            border: '2px solid #4ade80'
+          }}
+        >
+          🔐 Admin
+        </button>
+      )}
     </nav>
   );
 }

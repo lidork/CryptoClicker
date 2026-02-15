@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'
 import { toast } from 'react-toastify'
 import { GameItemABI } from '../abis/contractABIs'
@@ -17,6 +17,21 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
   const [agentSupplies, setAgentSupplies] = useState<Record<string, number>>({})
   const [agentHistory, setAgentHistory] = useState<AgentHistoryEvent[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+
+  useEffect(() => {
+    if (!userAddress) {
+      setInventory([])
+      setSelectedTokenId(null)
+      setSelectedItemHistory([])
+      setSelectedItemMetadata(null)
+      setTransferTarget("")
+      setSelectedAgentDetails(null)
+      setAgentBeingViewed(null)
+      setAgentSupplies({})
+      setAgentHistory([])
+      setIsLoadingHistory(false)
+    }
+  }, [userAddress])
 
   const fetchInventory = useCallback(async () => {
     if (signer && userAddress) {
@@ -298,20 +313,23 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     }
   }, [signer])
 
-  const fetchAgentSupplies = useCallback((agentClasses: AgentClassConfig[]) => {
-    // Calculate agent supplies from inventory data (client-side)
-    // No contract call needed - prevents issues with non-existent contract function
-    const supplies: Record<string, number> = {}
+  const fetchAgentSupplies = useCallback(async (agentClasses: AgentClassConfig[]) => {
+    if (!signer) return
     
-    for (const agentClass of agentClasses) {
-      const count = inventory.filter(item => 
-        item.isAgent && item.agentClass === agentClass.name
-      ).length
-      supplies[agentClass.name] = count
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
+      const supplies: Record<string, number> = {}
+      
+      for (const agentClass of agentClasses) {
+        const supply = await gameItemContract.agentClassSupply(agentClass.name)
+        supplies[agentClass.name] = Number(supply)
+      }
+      
+      setAgentSupplies(supplies)
+    } catch (e) {
+      console.warn("Error fetching agent supplies", e)
     }
-    
-    setAgentSupplies(supplies)
-  }, [inventory])
+  }, [signer])
 
   const transferItem = useCallback(async (selectedTokenId: string) => {
     if (!signer || !userAddress) return

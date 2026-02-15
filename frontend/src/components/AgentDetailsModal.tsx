@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { QUEST_DURATIONS } from '../constants';
+import { useState, useEffect, type JSX } from 'react';
+import { QUEST_DURATIONS, MARKETPLACE_ADDRESS } from '../constants';
 import type { AgentDetails, ItemHistoryRecord, AgentHistoryEvent } from '../types';
+import { ZeroAddress } from 'ethers';
 
 interface AgentDetailsModalProps {
   selectedAgentDetails: AgentDetails;
@@ -46,6 +47,30 @@ export function AgentDetailsModal({
   const [currentTime, setCurrentTime] = useState(() => Math.floor(Date.now() / 1000));
   const [listPrice, setListPrice] = useState('');
   const [isListing, setIsListing] = useState(false);
+  
+  // Generate consistent color for wallet address
+  const getAddressColor = (address: string): string => {
+    let hash = 0;
+    for (let i = 0; i < address.length; i++) {
+      hash = address.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 70%, 65%)`;
+  };
+  
+  // Format address with label and color
+  const formatAddress = (address: string): JSX.Element => {
+    if (address === ZeroAddress) {
+      return <span style={{ color: '#4ade80' }}>🎁 Mint</span>;
+    }
+    if (address.toLowerCase() === MARKETPLACE_ADDRESS.toLowerCase()) {
+      return <span style={{ color: '#f59e0b' }}>🛍️ Marketplace</span>;
+    }
+    if (address.toLowerCase() === userAddress?.toLowerCase()) {
+      return <span style={{ color: '#4ade80' }}>You</span>;
+    }
+    return <span style={{ color: getAddressColor(address) }}>{address.slice(0, 6)}...{address.slice(-4)}</span>;
+  };
   
   // Load history when modal opens
   useEffect(() => {
@@ -316,8 +341,8 @@ export function AgentDetailsModal({
             ) : (
               selectedItemHistory.map((record, i) => (
                 <p key={i} style={{ fontSize: '0.85em', margin: '0.5rem 0', paddingBottom: '0.5rem', borderBottom: '1px solid #222' }}>
-                  <span style={{ color: '#aaa' }}>From:</span> {record.from === '0x0000000000000000000000000000000000000000' ? '🎁 Mint' : record.from.slice(0,6) + '...'} <br/>
-                  <span style={{ color: '#aaa' }}>To:</span> {record.to.toLowerCase() === userAddress?.toLowerCase() ? <span style={{ color: '#4ade80' }}>You</span> : record.to.slice(0,6) + '...'}
+                  <span style={{ color: '#aaaaaa' }}>From:</span> {formatAddress(record.from)} <br/>
+                  <span style={{ color: '#aaa' }}>To:</span> {formatAddress(record.to)}
                 </p>
               ))
             )}

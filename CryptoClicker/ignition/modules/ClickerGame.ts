@@ -21,5 +21,8 @@ export default buildModule("ClickerGameModule", (m) => {
 
   const marketplace = m.contract("Marketplace", [gameItem, clickerToken]);
 
+  // Set GameItem as the authorized burner on ClickerToken
+  m.call(clickerToken, "setAuthorizedBurner", [gameItem]);
+
   return { clickerToken, gameItem, marketplace };
 });

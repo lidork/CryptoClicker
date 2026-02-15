@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react'
-import { Contract, parseEther } from 'ethers'
+import { Contract, parseEther, formatEther } from 'ethers'
 import { toast } from 'react-toastify'
 import { ClickerTokenABI, GameItemABI } from '../abis/contractABIs'
-import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS, AGENT_MINT_COST } from '../constants'
+import { CLICKER_TOKEN_ADDRESS, GAME_ITEM_ADDRESS } from '../constants'
 import { JsonRpcSigner } from 'ethers'
 
 import type { AgentClassConfig } from '../types'
@@ -11,12 +11,29 @@ export function useAgentCreation(signer: JsonRpcSigner | null, userAddress: stri
   const [isCreatingAgent, setIsCreatingAgent] = useState(false)
   const [selectedAgentClass, setSelectedAgentClass] = useState<string | null>(null)
   const [showAgentCreationModal, setShowAgentCreationModal] = useState(false)
+  const [dynamicAgentPrices, setDynamicAgentPrices] = useState<Record<string, string>>({})
+
+  const fetchAgentPrices = useCallback(async (agentClasses: AgentClassConfig[]) => {
+    if (!signer) return
+    try {
+      const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
+      const prices: Record<string, string> = {}
+
+      for (const agentClass of agentClasses) {
+        const currentPriceWei = await gameItemContract.getDynamicAgentPrice(agentClass.name)
+        prices[agentClass.name] = formatEther(currentPriceWei)
+      }
+      setDynamicAgentPrices(prices)
+    } catch (e) {
+      console.warn("Error fetching dynamic agent prices", e)
+    }
+  }, [signer])
 
   const createAgent = useCallback(async (
     agentClass: string,
     fetchBalance: () => Promise<void>,
     fetchInventory: () => Promise<void>,
-    fetchAgentSupplies: (classes: AgentClassConfig[]) => void,
+    fetchAgentSupplies: (classes: AgentClassConfig[]) => Promise<void>,
     agentClasses: AgentClassConfig[]
   ) => {
     if (!signer || !userAddress) {
@@ -24,9 +41,17 @@ export function useAgentCreation(signer: JsonRpcSigner | null, userAddress: stri
       return
     }
 
+    // Get dynamic price for this agent class
+    const agentPriceStr = dynamicAgentPrices[agentClass]
+    if (!agentPriceStr) {
+      toast.error("Price not loaded yet, please wait...")
+      return
+    }
+
+    const agentPrice = parseFloat(agentPriceStr)
     const balance = parseFloat(tokenBalance)
-    if (balance < AGENT_MINT_COST) {
-      toast.error(`Insufficient funds! Agent costs ${AGENT_MINT_COST} CLK.`)
+    if (balance < agentPrice) {
+      toast.error(`Insufficient funds! Agent costs ${agentPrice} CLK.`)
       return
     }
 
@@ -36,8 +61,8 @@ export function useAgentCreation(signer: JsonRpcSigner | null, userAddress: stri
       const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer)
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
 
-      // Check allowance
-      const costWei = parseEther(AGENT_MINT_COST.toString())
+      // Check allowance with dynamic price
+      const costWei = parseEther(agentPriceStr)
       const allowance = await tokenContract.allowance(userAddress, GAME_ITEM_ADDRESS)
 
       if (allowance < costWei) {
@@ -67,11 +92,12 @@ export function useAgentCreation(signer: JsonRpcSigner | null, userAddress: stri
       setSelectedAgentClass(null)
       setShowAgentCreationModal(false)
       
-      // Add delay for blockchain processing
+      // Add delay for blockchain processing, then refresh prices
       setTimeout(() => {
         fetchBalance()
         fetchInventory()
         fetchAgentSupplies(agentClasses)
+        fetchAgentPrices(agentClasses)
       }, 2000)
     } catch (e: unknown) {
       console.error("Agent creation failed:", e)
@@ -79,14 +105,16 @@ export function useAgentCreation(signer: JsonRpcSigner | null, userAddress: stri
     } finally {
       setIsCreatingAgent(false)
     }
-  }, [signer, userAddress, tokenBalance])
+  }, [signer, userAddress, tokenBalance, dynamicAgentPrices, fetchAgentPrices])
 
   return {
     isCreatingAgent,
     selectedAgentClass,
     showAgentCreationModal,
+    dynamicAgentPrices,
     setSelectedAgentClass,
     setShowAgentCreationModal,
-    createAgent
+    createAgent,
+    fetchAgentPrices
   }
 }

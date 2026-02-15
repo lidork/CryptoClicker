@@ -10,10 +10,8 @@ import "./libraries/PricingLib.sol";
 import "./libraries/AgentMathLib.sol";
 
 /**
- * @title GameItem - Hybrid NFT Contract
- * @dev Supports two distinct NFT types:
  * 
- * 1. LOOTBOX Items: Consumable, tradeable, fixed stats, bonding curve pricing
+ * 1. LOOTBOX Items: tradeable, fixed stats, bonding curve pricing
  *    - Sword of Clicking, Shield of Holding, Scepter of the Infinite
  *    - Fixed strength bonus (1-50, representing 0.01-0.50 multiplier)
  *    - Price increases with supply
@@ -28,17 +26,11 @@ import "./libraries/AgentMathLib.sol";
  */
 contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     
-    // ============ ENUMS ============
     enum ItemType { LOOTBOX, AGENT }
 
     uint256 private _nextTokenId;
     IERC20 public paymentToken;
 
-    // ============ STRUCTS ============
-    
-    /**
-     * @dev Metadata for lootbox items
-     */
     struct ItemMetadata {
         uint256 purchasePrice;
         uint256 mintDate;
@@ -47,7 +39,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     }
 
     /**
-     * @dev ERC-8004 Agent Stats (Identity Registry)
+     * ERC-8004 Agent Stats (Identity Registry)
      * Agents evolve over time and gain XP through gameplay
      */
     struct AgentStats {
@@ -61,7 +53,7 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     }
 
     /**
-     * @dev Quest/Staking information for agents
+     *Quest/Staking information for agents
      */
     struct QuestInfo {
         address staker;
@@ -76,17 +68,24 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     mapping(uint256 => ItemMetadata) public items;
     mapping(uint256 => AgentStats) public agentRegistry;
     mapping(uint256 => QuestInfo) public agentQuests;   
+    
+    uint256 public accumulatedFunds; // Total funds from item/agent purchases
+    
+    // Agent supply tracking per class for bonding curve
+    mapping(string => uint256) public agentClassSupply;   
 
     // Pricing (Lootbox)
     uint256 public constant PRICE_INCREMENT = 1 * 10**18;         
+    
+    // Pricing (Agent) - Base price and increment for bonding curve
+    uint256 public constant BASE_AGENT_PRICE = 500 * 10**18;
+    uint256 public constant AGENT_PRICE_INCREMENT = 10 * 10**18; // Price increases by 10 CLK per agent
     
     uint256 public constant XP_PER_LEVEL = 100;                 
     
     uint256 public constant BASE_WARRIOR_RATE = 0.5 * 10**18;    
     uint256 public constant BASE_GUARDIAN_RATE = 1 * 10**18;     
-    uint256 public constant BASE_SORCERER_RATE = 2 * 10**18;     
-    
-    uint256 public constant AGENT_MINT_COST = 500 * 10**18;      
+    uint256 public constant BASE_SORCERER_RATE = 2 * 10**18;      
 
     
     // Agent events
@@ -97,6 +96,11 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     // Quest events
     event AgentSentOnQuest(uint256 indexed tokenId, address indexed owner, uint256 duration, uint256 endTime);
     event AgentReturnedFromQuest(uint256 indexed tokenId, address indexed owner, uint256 xpGained, uint256 tokensEarned, string lootRarity);
+    
+    // Owner revenue events
+    event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp);
+    event TokensBurnt(uint256 amount, string purchaseType);
+    event OwnerCommission(address indexed owner, uint256 amount, string purchaseType);
 
     constructor(address _paymentTokenAddress) ERC721("ClickerItem", "ITM") Ownable(msg.sender) {
         paymentToken = IERC20(_paymentTokenAddress);
@@ -110,6 +114,12 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         uint256 supply = uriSupply[tokenURI];
         return PricingLib.dynamicPrice(basePrice, supply, PRICE_INCREMENT);
     }
+    
+    function getDynamicAgentPrice(string memory agentClass) public view returns (uint256) {
+        // Price based on supply of THIS specific agent class
+        uint256 supply = agentClassSupply[agentClass];
+        return PricingLib.dynamicPrice(BASE_AGENT_PRICE, supply, AGENT_PRICE_INCREMENT);
+    }
 
     function mintLootboxItem(address player, string memory tokenURI, uint256 basePrice)
         external
@@ -121,6 +131,22 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             paymentToken.transferFrom(msg.sender, address(this), currentPrice),
             "E1"
         );
+        
+        // Split payment: 90% burned (deflation), 10% to owner
+        uint256 ownerCommission = (currentPrice * 10) / 100;
+        uint256 burnAmount = currentPrice - ownerCommission;
+        
+        // Burn 90% to reduce totalSupply
+        (bool success, ) = address(paymentToken).call(
+            abi.encodeWithSignature("burn(address,uint256)", address(this), burnAmount)
+        );
+        require(success, "Burn failed");
+        
+        // Track 10% commission for owner withdrawal
+        accumulatedFunds += ownerCommission;
+        
+        emit TokensBurnt(burnAmount, "lootbox");
+        emit OwnerCommission(owner(), ownerCommission, "lootbox");
 
         uint256 tokenId = _nextTokenId++;
         _mint(player, tokenId);
@@ -161,10 +187,32 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         external
         returns (uint256)
     {
+        // Calculate dynamic price based on agent class supply
+        uint256 currentPrice = getDynamicAgentPrice(agentClass);
+        
         require(
-            paymentToken.transferFrom(msg.sender, address(this), AGENT_MINT_COST),
+            paymentToken.transferFrom(msg.sender, address(this), currentPrice),
             "E2"
         );
+        
+        // Split payment: 90% burned (deflation), 10% to owner
+        uint256 ownerCommission = (currentPrice * 10) / 100;
+        uint256 burnAmount = currentPrice - ownerCommission;
+        
+        // Burn 90% to reduce totalSupply
+        (bool success, ) = address(paymentToken).call(
+            abi.encodeWithSignature("burn(address,uint256)", address(this), burnAmount)
+        );
+        require(success, "Burn failed");
+        
+        // Track 10% commission for owner withdrawal
+        accumulatedFunds += ownerCommission;
+        
+        emit TokensBurnt(burnAmount, "agent");
+        emit OwnerCommission(owner(), ownerCommission, "agent");
+        
+        // Increment supply for this agent class
+        agentClassSupply[agentClass]++;
 
         uint256 tokenId = _nextTokenId++;
         _mint(player, tokenId);
@@ -365,6 +413,29 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         isOnQuest = quest.isOnQuest;
         questEndTime = quest.startTime + quest.questDuration;
         remainingTime = questEndTime > block.timestamp ? questEndTime - block.timestamp : 0;
+    }
+    
+    // ============ OWNER FUNCTIONS ============
+    
+    //Allows owner to withdraw accumulated funds from item and agent purchases
+     
+    function withdrawFunds() external onlyOwner {
+        uint256 amount = accumulatedFunds;
+        require(amount > 0, "No funds to withdraw");
+        
+        accumulatedFunds = 0;
+        
+        require(
+            paymentToken.transfer(owner(), amount),
+            "Fund withdrawal failed"
+        );
+        
+        emit FundsWithdrawn(owner(), amount, block.timestamp);
+    }
+    
+    // returns accumulated funds for frontend display
+    function getAccumulatedFunds() external view returns (uint256) {
+        return accumulatedFunds;
     }
 
     function supportsInterface(bytes4 interfaceId)
