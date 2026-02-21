@@ -2,18 +2,20 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
+contract ClickerToken is ERC20, ERC20Burnable, ERC20Permit, Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
-    // alidator for Anti-Cheat
+    // Validator for Anti-Cheat (for mint function)
     address public validator;
-    mapping(address => uint256) public nonces;
+    mapping(address => uint256) public mintNonces; 
     
     // Authorized burner (GameItem contract)
     address public authorizedBurner;
@@ -35,7 +37,11 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
     mapping(address => uint256) public lastMintTime;
     uint256 public constant COOLDOWN_TIME = 1 minutes;
 
-    constructor(address _validator) ERC20("ClickerCoin", "CLK") Ownable(msg.sender) {
+    constructor(address _validator) 
+        ERC20("ClickerCoin", "CLK") 
+        ERC20Permit("ClickerCoin")
+        Ownable(msg.sender) 
+    {
         require(_validator != address(0), "Validator cannot be zero address");
         validator = _validator;
         emit ValidatorUpdated(address(0), _validator);
@@ -48,7 +54,7 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         require(amount > 0, "Amount must be greater than 0");
         require(to != address(0), "Cannot mint to zero address");
 
-        require(nonce == nonces[msg.sender], "Invalid nonce");
+        require(nonce == mintNonces[msg.sender], "Invalid nonce");
 
         // Signature validation (anti-cheat)
         bytes32 messageHash = keccak256(abi.encodePacked(msg.sender, amount, nonce));
@@ -56,8 +62,8 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         address recoveredSigner = ethSignedMessageHash.recover(signature);
         require(recoveredSigner == validator, "Invalid signature: not signed by validator");
 
-        // Increment nonce after successful validation
-        nonces[msg.sender]++;
+        // Increment custom mint nonce after successful validation
+        mintNonces[msg.sender]++;
         emit MintValidated(msg.sender, amount, nonce);
 
         // limits and caps
@@ -84,19 +90,29 @@ contract ClickerToken is ERC20, Ownable, ReentrancyGuard {
         emit ValidatorUpdated(oldValidator, _newValidator);
     }
 
-    // View function to get current nonce for a user
-    function getNonce(address user) external view returns (uint256) {
-        return nonces[user];
+    // View function to get current mint nonce for a user
+    function getMintNonce(address user) external view returns (uint256) {
+        return mintNonces[user];
     }
     
-    // Burn function - only callable by authorized burner (GameItem contract)
-    function burn(address from, uint256 amount) external {
-        require(msg.sender == authorizedBurner, "Only authorized burner can burn tokens");
-        require(from != address(0), "Cannot burn from zero address");
+    // View function to get current permit nonce for a user (EIP-2612)
+    function getNonce(address user) external view returns (uint256) {
+        return nonces(user);
+    }
+    
+    // Burn function - overrides ERC20Burnable to burn caller's own tokens only
+    function burn(uint256 amount) public override {
         require(amount > 0, "Amount must be greater than 0");
-        
-        _burn(from, amount);
-        emit TokensBurned(from, amount);
+        _burn(msg.sender, amount);
+        emit TokensBurned(msg.sender, amount);
+    }
+    
+    // Authorized burner function - restricted to authorized burner address only
+    function burnByAuthorized(uint256 amount) external {
+        require(msg.sender == authorizedBurner, "Only authorized burner can call this");
+        require(amount > 0, "Amount must be greater than 0");
+        _burn(msg.sender, amount);
+        emit TokensBurned(msg.sender, amount);
     }
     
     // Quest reward mint - only callable by GameItem contract (authorized burner)

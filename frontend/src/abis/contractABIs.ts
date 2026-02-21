@@ -16,12 +16,14 @@ export const ClickerTokenABI = [
   
   // PHASE 3: Validator management and nonce tracking
   "function validator() view returns (address)",
+  "function getMintNonce(address user) view returns (uint256)",
   "function getNonce(address user) view returns (uint256)",
   "function setValidator(address newValidator) external",
   "function nonces(address user) view returns (uint256)",
   
   // Burn functionality
-  "function burn(address from, uint256 amount) external",
+  "function burn(uint256 amount) external",
+  "function burnByAuthorized(uint256 amount) external",
   "function setAuthorizedBurner(address burner) external",
   "function authorizedBurner() view returns (address)",
   
@@ -66,6 +68,12 @@ export const GameItemABI = [
   // Agent Experience & Leveling
   "function addExperience(uint256 tokenId, uint256 baseXpAmount) external",
   
+    // On-chain history
+    "function getTransferHistoryLength(uint256 tokenId) view returns (uint256)",
+    "function getTransferRecord(uint256 tokenId, uint256 index) view returns (address from, address to, uint256 price, uint256 timestamp, uint8 source)",
+    "function getQuestHistoryLength(uint256 tokenId) view returns (uint256)",
+    "function getQuestRecord(uint256 tokenId, uint256 index) view returns (address owner, uint256 startTime, uint256 endTime, uint256 duration, uint256 rewardTokens, string rewardRarity, string rewardItemUri, uint256 xpBefore, uint256 xpGained, uint256 xpAfter)",
+  
   // Quest System
   "function sendAgentOnQuest(uint256 tokenId, uint256 questDuration) external",
   "function completeQuest(uint256 tokenId) external",
@@ -95,6 +103,11 @@ export const GameItemABI = [
   "event ExperienceGained(uint256 indexed tokenId, uint256 xpAmount, uint256 totalExperience)",
   "event AgentSentOnQuest(uint256 indexed tokenId, address indexed owner, uint256 duration, uint256 endTime)",
   "event AgentReturnedFromQuest(uint256 indexed tokenId, address indexed owner, uint256 xpGained, uint256 tokensEarned, string lootRarity)",
+  
+  // On-chain history events (for Etherscan visibility)
+  "event TransferRecorded(uint256 indexed tokenId, address indexed from, address indexed to, uint256 price, uint256 timestamp, uint8 source)",
+  "event QuestPassportRecorded(uint256 indexed tokenId, address indexed owner, uint256 startTime, uint256 endTime, uint256 duration, uint256 rewardTokens, string rewardRarity, uint256 xpBefore, uint256 xpGained, uint256 xpAfter)",
+  
   "event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp)",
   "event TokensBurnt(uint256 amount, string purchaseType)",
   "event OwnerCommission(address indexed owner, uint256 amount, string purchaseType)",
@@ -128,5 +141,6 @@ export const MarketplaceABI = [
   "event ItemPurchased(address indexed buyer, address indexed seller, uint256 indexed tokenId, uint256 price, uint256 listingId, uint256 timestamp)",
   "event ListingCancelled(address indexed seller, uint256 indexed listingId, uint256 tokenId, uint256 timestamp)",
   "event PlatformFeeCollected(uint256 indexed listingId, uint256 fee, uint256 timestamp)",
+  "event RoyaltyPaid(uint256 indexed listingId, address indexed recipient, uint256 amount, uint256 timestamp)",
   "event FeesWithdrawn(address indexed owner, uint256 amount, uint256 timestamp)"
 ];

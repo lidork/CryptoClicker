@@ -2,9 +2,15 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+interface IGameItemHistory {
+    function prepareMarketplaceTransfer(uint256 tokenId) external;
+    function recordMarketplaceTransfer(uint256 tokenId, address seller, address buyer, uint256 price) external;
+}
 
 /**
  * Marketplace - Secondary Market for GameItem NFTs
@@ -63,6 +69,13 @@ contract Marketplace is Ownable, ReentrancyGuard {
         uint256 fee,
         uint256 timestamp
     );
+
+    event RoyaltyPaid(
+        uint256 indexed listingId,
+        address indexed recipient,
+        uint256 amount,
+        uint256 timestamp
+    );
     
     event FeesWithdrawn(
         address indexed owner,
@@ -105,13 +118,17 @@ contract Marketplace is Ownable, ReentrancyGuard {
     }
 
    
-     //@dev Purchases a listed NFT. Requires approval of CLK tokens first.
+     // Purchases a listed NFT. Requires approval of CLK tokens first.
     
     function purchaseItem(uint256 listingId) external nonReentrant {
         Listing storage listing = listings[listingId];
         
         require(listing.status == ListingStatus.ACTIVE, "Listing not active");
         require(listing.seller != msg.sender, "Cannot buy own listing");
+
+        (address royaltyRecipient, uint256 royaltyAmount) = _getRoyaltyInfo(listing.tokenId, listing.price);
+        require(royaltyAmount <= listing.price, "Invalid royalty amount");
+        uint256 sellerProceeds = listing.price - royaltyAmount;
         
         // Calculate platform fee (10% of listing price)
         uint256 platformFee = (listing.price * PLATFORM_FEE_PERCENTAGE) / 100;
@@ -129,11 +146,19 @@ contract Marketplace is Ownable, ReentrancyGuard {
             "Insufficient token allowance"
         );
         
-        // Transfer payment to seller (original price)
-        require(
-            paymentToken.transferFrom(msg.sender, listing.seller, listing.price),
-            "Payment transfer failed"
-        );
+        if (sellerProceeds > 0) {
+            require(
+                paymentToken.transferFrom(msg.sender, listing.seller, sellerProceeds),
+                "Seller payment failed"
+            );
+        }
+
+        if (royaltyAmount > 0 && royaltyRecipient != address(0)) {
+            require(
+                paymentToken.transferFrom(msg.sender, royaltyRecipient, royaltyAmount),
+                "Royalty payment failed"
+            );
+        }
         
         // Transfer platform fee to contract
         require(
@@ -144,14 +169,40 @@ contract Marketplace is Ownable, ReentrancyGuard {
         // Accumulate fees for owner withdrawal
         accumulatedFees += platformFee;
         
+        // Suppress default transfer history so we can record price
+        IGameItemHistory(address(gameItemNFT)).prepareMarketplaceTransfer(listing.tokenId);
+
         // Transfer NFT to buyer
         gameItemNFT.transferFrom(address(this), msg.sender, listing.tokenId);
+
+        // Record marketplace transfer history on-chain
+        IGameItemHistory(address(gameItemNFT)).recordMarketplaceTransfer(
+            listing.tokenId,
+            listing.seller,
+            msg.sender,
+            listing.price
+        );
         
         // Mark listing as sold
         listing.status = ListingStatus.SOLD;
         
         emit ItemPurchased(msg.sender, listing.seller, listing.tokenId, listing.price, listingId, block.timestamp);
+        if (royaltyAmount > 0 && royaltyRecipient != address(0)) {
+            emit RoyaltyPaid(listingId, royaltyRecipient, royaltyAmount, block.timestamp);
+        }
         emit PlatformFeeCollected(listingId, platformFee, block.timestamp);
+    }
+
+    function _getRoyaltyInfo(uint256 tokenId, uint256 salePrice) internal view returns (address, uint256) {
+        if (!gameItemNFT.supportsInterface(type(IERC2981).interfaceId)) {
+            return (address(0), 0);
+        }
+
+        try IERC2981(address(gameItemNFT)).royaltyInfo(tokenId, salePrice) returns (address receiver, uint256 royaltyAmount) {
+            return (receiver, royaltyAmount);
+        } catch {
+            return (address(0), 0);
+        }
     }
 
      //Cancels a listing and returns the NFT to the seller

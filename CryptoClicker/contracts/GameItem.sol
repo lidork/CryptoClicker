@@ -4,10 +4,20 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./libraries/QuestLootLib.sol";
 import "./libraries/PricingLib.sol";
 import "./libraries/AgentMathLib.sol";
+import "./libraries/HistoryLib.sol";
+
+/**
+ * @dev Interface for quest reward minting - prevents unsafe low-level calls
+ */
+interface IQuestRewarder {
+    function questRewardMint(address to, uint256 amount) external;
+}
 
 /**
  * 
@@ -25,11 +35,15 @@ import "./libraries/AgentMathLib.sol";
  *    - Soul-bound or freely transferable
  */
 contract GameItem is ERC721URIStorage, ERC2981, Ownable {
+    using SafeERC20 for ERC20Burnable;
+    using HistoryLib for HistoryLib.HistoryStore;
+
     
     enum ItemType { LOOTBOX, AGENT }
 
     uint256 private _nextTokenId;
-    IERC20 public paymentToken;
+    ERC20Burnable public paymentToken;  
+
 
     struct ItemMetadata {
         uint256 purchasePrice;
@@ -62,17 +76,21 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         bool isOnQuest;
         bytes32 randomSeed;
     }
-    
+
     mapping(uint256 => ItemType) public nftTypes;
     mapping(string => uint256) public uriSupply;
     mapping(uint256 => ItemMetadata) public items;
     mapping(uint256 => AgentStats) public agentRegistry;
-    mapping(uint256 => QuestInfo) public agentQuests;   
+    mapping(uint256 => QuestInfo) public agentQuests;
+    HistoryLib.HistoryStore private history;
+    mapping(uint256 => bool) private suppressNextTransferRecord;
     
     uint256 public accumulatedFunds; // Total funds from item/agent purchases
     
     // Agent supply tracking per class for bonding curve
     mapping(string => uint256) public agentClassSupply;   
+
+    address public marketplaceAddress;
 
     // Pricing (Lootbox)
     uint256 public constant PRICE_INCREMENT = 1 * 10**18;         
@@ -97,13 +115,20 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
     event AgentSentOnQuest(uint256 indexed tokenId, address indexed owner, uint256 duration, uint256 endTime);
     event AgentReturnedFromQuest(uint256 indexed tokenId, address indexed owner, uint256 xpGained, uint256 tokensEarned, string lootRarity);
     
+    // On-chain history events (for Etherscan visibility)
+    event TransferRecorded(uint256 indexed tokenId, address indexed from, address indexed to, uint256 price, uint256 timestamp, uint8 source);
+    event QuestPassportRecorded(uint256 indexed tokenId, address indexed owner, uint256 startTime, uint256 endTime, uint256 duration, uint256 rewardTokens, string rewardRarity, uint256 xpBefore, uint256 xpGained, uint256 xpAfter);
+    
     // Owner revenue events
     event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp);
     event TokensBurnt(uint256 amount, string purchaseType);
     event OwnerCommission(address indexed owner, uint256 amount, string purchaseType);
 
+    event MarketplaceAddressUpdated(address indexed oldAddress, address indexed newAddress);
+
     constructor(address _paymentTokenAddress) ERC721("ClickerItem", "ITM") Ownable(msg.sender) {
-        paymentToken = IERC20(_paymentTokenAddress);
+        paymentToken = ERC20Burnable(_paymentTokenAddress);
+
         _setDefaultRoyalty(msg.sender, 1000); // 10% royalty
     }
 
@@ -131,22 +156,18 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             paymentToken.transferFrom(msg.sender, address(this), currentPrice),
             "E1"
         );
-        
-        // Split payment: 90% burned (deflation), 10% to owner
+
         uint256 ownerCommission = (currentPrice * 10) / 100;
         uint256 burnAmount = currentPrice - ownerCommission;
         
-        // Burn 90% to reduce totalSupply
-        (bool success, ) = address(paymentToken).call(
-            abi.encodeWithSignature("burn(address,uint256)", address(this), burnAmount)
-        );
-        require(success, "Burn failed");
+        // SafeERC20 + ERC20Burnable interface—no low-level call
+        paymentToken.burn(burnAmount);
         
-        // Track 10% commission for owner withdrawal
         accumulatedFunds += ownerCommission;
         
         emit TokensBurnt(burnAmount, "lootbox");
         emit OwnerCommission(owner(), ownerCommission, "lootbox");
+
 
         uint256 tokenId = _nextTokenId++;
         _mint(player, tokenId);
@@ -171,6 +192,8 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             originalCreator: msg.sender,
             strength: randomStrength
         });
+
+        _recordTransfer(tokenId, address(0), player, currentPrice, HistoryLib.TransferSource.SHOP);
 
         return tokenId;
     }
@@ -199,13 +222,9 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         uint256 ownerCommission = (currentPrice * 10) / 100;
         uint256 burnAmount = currentPrice - ownerCommission;
         
-        // Burn 90% to reduce totalSupply
-        (bool success, ) = address(paymentToken).call(
-            abi.encodeWithSignature("burn(address,uint256)", address(this), burnAmount)
-        );
-        require(success, "Burn failed");
+        /// SafeERC20 + ERC20Burnable interface
+        paymentToken.burn(burnAmount);
         
-        // Track 10% commission for owner withdrawal
         accumulatedFunds += ownerCommission;
         
         emit TokensBurnt(burnAmount, "agent");
@@ -245,6 +264,8 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             agentClass: agentClass,
             xpGainVariance: xpVariance
         });
+
+        _recordTransfer(tokenId, address(0), player, currentPrice, HistoryLib.TransferSource.SHOP);
 
         emit AgentCreated(tokenId, msg.sender, agentClass, baseMiningRate, xpVariance);
 
@@ -289,6 +310,61 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         return agentRegistry[tokenId];
     }
 
+    function getTransferHistoryLength(uint256 tokenId) external view returns (uint256) {
+        return history.transferLength(tokenId);
+    }
+
+    function getTransferRecord(uint256 tokenId, uint256 index)
+        external
+        view
+        returns (address from, address to, uint256 price, uint256 timestamp, HistoryLib.TransferSource source)
+    {
+        HistoryLib.TransferRecord memory record = history.transferRecord(tokenId, index);
+        return (record.from, record.to, record.price, record.timestamp, record.source);
+    }
+
+    function getQuestHistoryLength(uint256 tokenId) external view returns (uint256) {
+        return history.questLength(tokenId);
+    }
+
+    function getQuestRecord(uint256 tokenId, uint256 index)
+        external
+        view
+        returns (
+            address owner,
+            uint256 startTime,
+            uint256 endTime,
+            uint256 duration,
+            uint256 rewardTokens,
+            string memory rewardRarity,
+            string memory rewardItemUri,
+            uint256 xpBefore,
+            uint256 xpGained,
+            uint256 xpAfter
+        )
+    {
+        HistoryLib.QuestPassportRecord memory record = history.questRecord(tokenId, index);
+        return (
+            record.owner,
+            record.startTime,
+            record.endTime,
+            record.duration,
+            record.rewardTokens,
+            record.rewardRarity,
+            record.rewardItemUri,
+            record.xpBefore,
+            record.xpGained,
+            record.xpAfter
+        );
+    }
+
+    function setMarketplaceAddress(address newMarketplace) external onlyOwner {
+        require(newMarketplace != address(0), "Invalid marketplace address");
+        address oldMarketplace = marketplaceAddress;
+        marketplaceAddress = newMarketplace;
+        emit MarketplaceAddressUpdated(oldMarketplace, newMarketplace);
+    }
+
 
 
     function _update(address to, uint256 tokenId, address auth) 
@@ -297,7 +373,17 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         override 
         returns (address) 
     {
-        return super._update(to, tokenId, auth);
+        address from = super._update(to, tokenId, auth);
+
+        if (from != address(0) && to != address(0)) {
+            if (suppressNextTransferRecord[tokenId]) {
+                suppressNextTransferRecord[tokenId] = false;
+            } else {
+                _recordTransfer(tokenId, from, to, 0, HistoryLib.TransferSource.DIRECT);
+            }
+        }
+
+        return from;
     }
 
 
@@ -305,6 +391,32 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
  
     function _exists(uint256 tokenId) internal view returns (bool) {
         return ownerOf(tokenId) != address(0);
+    }
+
+    function prepareMarketplaceTransfer(uint256 tokenId) external {
+        require(msg.sender == marketplaceAddress, "Only marketplace");
+        suppressNextTransferRecord[tokenId] = true;
+    }
+
+    function recordMarketplaceTransfer(
+        uint256 tokenId,
+        address seller,
+        address buyer,
+        uint256 price
+    ) external {
+        require(msg.sender == marketplaceAddress, "Only marketplace");
+        _recordTransfer(tokenId, seller, buyer, price, HistoryLib.TransferSource.MARKETPLACE);
+    }
+
+    function _recordTransfer(
+        uint256 tokenId,
+        address from,
+        address to,
+        uint256 price,
+        HistoryLib.TransferSource source
+    ) internal {
+        history.addTransfer(tokenId, from, to, price, block.timestamp, source);
+        emit TransferRecorded(tokenId, from, to, price, block.timestamp, uint8(source));
     }
 
     function sendAgentOnQuest(uint256 tokenId, uint256 questDuration) external {
@@ -349,19 +461,44 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
         );
         
         // Award XP
+        uint256 xpBefore = agent.experience;
         agent.experience += xpGained;
         _checkLevelUp(tokenId);
+        uint256 xpAfter = agent.experience;
         
-        // Mint quest reward tokens directly to player
-        (bool success, ) = address(paymentToken).call(
-            abi.encodeWithSignature("questRewardMint(address,uint256)", msg.sender, tokens)
-        );
-        require(success, "E9");
+        // Mint quest reward tokens directly to player via standard interface
+        IQuestRewarder(address(paymentToken)).questRewardMint(msg.sender, tokens);
         
         // Mint loot item if earned
         if (bytes(itemUri).length > 0) {
             _mintQuestLoot(msg.sender, itemUri);
         }
+
+        history.addQuest(tokenId, HistoryLib.QuestPassportRecord({
+            owner: msg.sender,
+            startTime: quest.startTime,
+            endTime: quest.startTime + quest.questDuration,
+            duration: quest.questDuration,
+            rewardTokens: tokens,
+            rewardRarity: rarity,
+            rewardItemUri: itemUri,
+            xpBefore: xpBefore,
+            xpGained: xpGained,
+            xpAfter: xpAfter
+        }));
+        
+        emit QuestPassportRecorded(
+            tokenId,
+            msg.sender,
+            quest.startTime,
+            quest.startTime + quest.questDuration,
+            quest.questDuration,
+            tokens,
+            rarity,
+            xpBefore,
+            xpGained,
+            xpAfter
+        );
         
         // Clear quest
         quest.isOnQuest = false;
@@ -409,6 +546,8 @@ contract GameItem is ERC721URIStorage, ERC2981, Ownable {
             originalCreator: recipient,
             strength: randomStrength
         });
+
+        _recordTransfer(tokenId, address(0), recipient, 0, HistoryLib.TransferSource.QUEST_REWARD);
     }
     function getQuestStatus(uint256 tokenId) external view returns (
         bool isOnQuest,

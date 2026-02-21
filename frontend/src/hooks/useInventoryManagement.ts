@@ -121,18 +121,15 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
     try {
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
       
-      // Fetch Transfer events for this token to build ownership history
+      // Fetch on-chain transfer history
       try {
-        const filter = gameItemContract.filters.Transfer(null, null, tokenId)
-        const events = await gameItemContract.queryFilter(filter, 0)
-        
-        const history: ItemHistoryRecord[] = events.map((event) => ({
-          // @ts-expect-error Ethers event args
-          from: event.args[0],
-          // @ts-expect-error Ethers event args
-          to: event.args[1]
-        }))
-        
+        const tokenIdBigInt = BigInt(tokenId)
+        const length = Number(await gameItemContract.getTransferHistoryLength(tokenIdBigInt))
+        const history: ItemHistoryRecord[] = []
+        for (let i = 0; i < length; i += 1) {
+          const [from, to] = await gameItemContract.getTransferRecord(tokenIdBigInt, i)
+          history.push({ from, to })
+        }
         setSelectedItemHistory(history)
       } catch (e) {
         console.warn("Could not fetch transfer history", e)
@@ -181,18 +178,15 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
       })
       setAgentBeingViewed(tokenId)
 
-      // Fetch Transfer events for ownership history
+      // Fetch on-chain transfer history for agent
       try {
-        const filter = gameItemContract.filters.Transfer(null, null, tokenId)
-        const events = await gameItemContract.queryFilter(filter, 0)
-        
-        const normalizedHistory: ItemHistoryRecord[] = events.map((event) => ({
-          // @ts-expect-error Ethers event args
-          from: event.args[0],
-          // @ts-expect-error Ethers event args
-          to: event.args[1]
-        }))
-        
+        const tokenIdBigInt = BigInt(tokenId)
+        const length = Number(await gameItemContract.getTransferHistoryLength(tokenIdBigInt))
+        const normalizedHistory: ItemHistoryRecord[] = []
+        for (let i = 0; i < length; i += 1) {
+          const [from, to] = await gameItemContract.getTransferRecord(tokenIdBigInt, i)
+          normalizedHistory.push({ from, to })
+        }
         setSelectedItemHistory(normalizedHistory)
       } catch (e) {
         console.warn("Could not fetch transfer history for agent", e)
@@ -211,14 +205,14 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
       const gameItemContract = new Contract(GAME_ITEM_ADDRESS, GameItemABI, signer)
       const tokenIdBigInt = BigInt(tokenId)
       
-      // Query all agent-related events for this tokenId
-      const [createdEvents, levelUpEvents, xpGainEvents, questSentEvents, questReturnEvents] = await Promise.all([
+      // Query agent-related events and quest history records
+      const [createdEvents, levelUpEvents, xpGainEvents, questLengthRaw] = await Promise.all([
         gameItemContract.queryFilter(gameItemContract.filters.AgentCreated(tokenIdBigInt), 0),
         gameItemContract.queryFilter(gameItemContract.filters.AgentLeveledUp(tokenIdBigInt), 0),
         gameItemContract.queryFilter(gameItemContract.filters.ExperienceGained(tokenIdBigInt), 0),
-        gameItemContract.queryFilter(gameItemContract.filters.AgentSentOnQuest(tokenIdBigInt), 0),
-        gameItemContract.queryFilter(gameItemContract.filters.AgentReturnedFromQuest(tokenIdBigInt), 0),
+        gameItemContract.getQuestHistoryLength(tokenIdBigInt)
       ])
+      const questLength = Number(questLengthRaw)
 
       const allEvents: AgentHistoryEvent[] = []
 
@@ -268,42 +262,44 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
         })
       }
 
-      // Parse quest sent events
-      for (const event of questSentEvents) {
-        const block = await event.getBlock()
-        // @ts-expect-error Ethers v6 args
-        const [, , duration] = event.args
+      // Parse quest history records
+      for (let i = 0; i < questLength; i += 1) {
+        const record = await gameItemContract.getQuestRecord(tokenIdBigInt, i)
+        const startTime = Number(record.startTime)
+        const endTime = Number(record.endTime)
+        const duration = Number(record.duration)
+        const xpGained = Number(record.xpGained)
+        const rewardTokens = Number(record.rewardTokens)
+        const rewardRarity = String(record.rewardRarity)
+
         allEvents.push({
           type: 'questStarted',
-          timestamp: block.timestamp,
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash,
+          timestamp: startTime,
+          blockNumber: 0,
+          transactionHash: '',
           data: {
-            duration: Number(duration)
+            duration
           }
         })
-      }
 
-      // Parse quest return events
-      for (const event of questReturnEvents) {
-        const block = await event.getBlock()
-        // @ts-expect-error Ethers v6 args
-        const [, , xpGained, tokensEarned, lootRarity] = event.args
         allEvents.push({
           type: 'questCompleted',
-          timestamp: block.timestamp,
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash,
+          timestamp: endTime,
+          blockNumber: 0,
+          transactionHash: '',
           data: {
-            xpAmount: Number(xpGained),
-            tokensEarned: Number(tokensEarned),
-            lootRarity: String(lootRarity)
+            xpAmount: xpGained,
+            tokensEarned: rewardTokens,
+            lootRarity: rewardRarity
           }
         })
       }
 
-      // Sort by block number (chronological order)
-      allEvents.sort((a, b) => a.blockNumber - b.blockNumber)
+      // Sort by timestamp if available, otherwise block number
+      allEvents.sort((a, b) => {
+        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp
+        return a.blockNumber - b.blockNumber
+      })
       setAgentHistory(allEvents)
     } catch (e) {
       console.error("Error fetching agent history:", e)

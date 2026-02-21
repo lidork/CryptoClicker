@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Contract } from 'ethers'
 import { toast } from 'react-toastify'
 import { ClickerTokenABI } from '../abis/contractABIs'
-import { CLICKER_TOKEN_ADDRESS, CLICKS_PER_TOKEN, SIGNER_API_URL } from '../constants'
+import { CLICKER_TOKEN_ADDRESS, CLICKS_PER_TOKEN, MAX_TOKENS_PER_TX, SIGNER_API_URL } from '../constants'
 import { JsonRpcSigner } from 'ethers'
 import type { InventoryItem, QuestInfo } from '../types'
 
@@ -82,12 +82,12 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
     }
 
     let tokensToMint = potentialTokens
-    if (tokensToMint > 10) {
+    if (tokensToMint > MAX_TOKENS_PER_TX) {
       const confirmed = window.confirm(
-        `You have earned enough clicks for ${tokensToMint} tokens, but the transaction limit is 10 tokens per batch.\n\nDo you want to payout 10 tokens now?`
+        `You have earned enough clicks for ${tokensToMint} tokens, but the transaction limit is ${MAX_TOKENS_PER_TX} tokens per batch.\n\nDo you want to payout ${MAX_TOKENS_PER_TX} tokens now?`
       )
       if (!confirmed) return
-      tokensToMint = 10
+      tokensToMint = MAX_TOKENS_PER_TX
     }
 
     const clicksToMint = tokensToMint * CLICKS_PER_TOKEN
@@ -99,7 +99,7 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
       
       // PHASE 3: Get current nonce for the user
       console.log("Fetching nonce for user:", userAddress)
-      const nonce = await tokenContract.getNonce(userAddress)
+      const nonce = await tokenContract.getMintNonce(userAddress)
       console.log("Current nonce:", nonce.toString())
 
       // PHASE 3: Request signature from backend validator (ERC-8004 Validation Registry)

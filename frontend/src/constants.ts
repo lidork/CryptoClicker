@@ -1,6 +1,6 @@
-export const CLICKER_TOKEN_ADDRESS = "0x75447464e785Dd6acBdf5dfE2ec3A7109c98056c";
-export const GAME_ITEM_ADDRESS = "0x9725720323d6eAebc239F10620A04510216d3D81";
-export const MARKETPLACE_ADDRESS = "0x8D8cCb4Bc11e101D7A9CB59c07f378333E02cb1f"; 
+export const CLICKER_TOKEN_ADDRESS = "0x180998D50B64546444C8a28019a9D9d97fe57a6B";
+export const GAME_ITEM_ADDRESS = "0xAeDDE4D345403fEe39dD5d49967d1d8D0B8179a4";
+export const MARKETPLACE_ADDRESS = "0x6fbDFc70fd2Ad49c19237BC29d374a85592a03Fc"; 
 
 // Signer Service API (ERC-8004 Validator)
 export const SIGNER_API_URL = import.meta.env.VITE_SIGNER_API || 'http://localhost:3001';
@@ -14,6 +14,9 @@ export const KNOWN_ADDRESS_LABELS: Record<string, string> = {
 };
 
 export const CLICKS_PER_TOKEN = 10; // How many clicks to earn 1 token
+// UI cap for minting per transaction - Hard limit on the contract is 100 for non-admin
+export const MAX_TOKENS_PER_TX = 10; 
+
 
 // Lootbox items (consumable, tradeable, fixed stats)
 export const SHOP_ITEMS = [

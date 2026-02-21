@@ -192,7 +192,7 @@ function App() {
     try {
       const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer)
       const validator = await tokenContract.validator()
-      const nonce = await tokenContract.getNonce(userAddress)
+      const nonce = await tokenContract.getMintNonce(userAddress)
       setValidatorAddress(validator)
       setUserNonce(Number(nonce))
       console.log("Validator:", validator)

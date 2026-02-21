@@ -58,7 +58,7 @@ export function AdminScreen({
 
     try {
       const tokenContract = new Contract(CLICKER_TOKEN_ADDRESS, ClickerTokenABI, signer)
-      const nonce = await tokenContract.getNonce(userAddress)
+      const nonce = await tokenContract.getMintNonce(userAddress)
       setUserNonce(Number(nonce))
     } catch (error) {
       console.error('Error fetching validator info:', error)
@@ -427,7 +427,7 @@ export function AdminScreen({
               </div>
             </div>
             <div style={{ marginBottom: '10px' }}>
-              <strong style={{ color: '#888' }}>Your Current Nonce:</strong>
+              <strong style={{ color: '#888' }}>Your Mint Nonce:</strong>
               <div style={{ color: '#fff', fontFamily: 'monospace' }}>
                 {userNonce}
               </div>

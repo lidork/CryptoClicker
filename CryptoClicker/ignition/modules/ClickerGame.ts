@@ -24,5 +24,8 @@ export default buildModule("ClickerGameModule", (m) => {
   // Set GameItem as the authorized burner on ClickerToken
   m.call(clickerToken, "setAuthorizedBurner", [gameItem]);
 
+  // Set Marketplace address on GameItem for transfer history tracking
+  m.call(gameItem, "setMarketplaceAddress", [marketplace]);
+
   return { clickerToken, gameItem, marketplace };
 });

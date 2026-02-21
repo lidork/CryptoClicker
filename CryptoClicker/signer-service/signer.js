@@ -32,7 +32,8 @@ console.log('');
  * Request Body:
  *   - userAddress: string (Ethereum address)
  *   - clickCount: number (accumulated clicks in frontend)
- *   - nonce: number (current nonce from contract)
+ *   - nonce: number (legacy mint nonce from contract)
+ *   - mintNonce: number (current mint nonce from contract)
  * 
  * Response:
  *   - signature: string (ECDSA signature)
@@ -40,11 +41,12 @@ console.log('');
  */
 app.post('/sign', async (req, res) => {
   try {
-    const { userAddress, clickCount, nonce } = req.body;
+    const { userAddress, clickCount, nonce, mintNonce } = req.body;
+    const resolvedNonce = typeof mintNonce === 'number' ? mintNonce : nonce;
     
     // Configuration
-    const CLICKS_PER_TOKEN = 10; // Should match frontend constant
-    const MAX_TOKENS_PER_TX = 10; // Contract limit: MAX_MINT_PER_TX
+    const CLICKS_PER_TOKEN = 10; // Both Should match frontend constant
+    const MAX_TOKENS_PER_TX = 10; 
     
     // Input validation
     if (!userAddress || !ethers.isAddress(userAddress)) {
@@ -70,7 +72,7 @@ app.post('/sign', async (req, res) => {
       });
     }
     
-    if (typeof nonce !== 'number' || nonce < 0) {
+    if (typeof resolvedNonce !== 'number' || resolvedNonce < 0) {
       return res.status(400).json({ error: 'Invalid nonce' });
     }
     
@@ -80,19 +82,20 @@ app.post('/sign', async (req, res) => {
     // Create message hash (must match Solidity: keccak256(abi.encodePacked(user, amount, nonce)))
     const messageHash = ethers.solidityPackedKeccak256(
       ['address', 'uint256', 'uint256'],
-      [userAddress, amountInWei, nonce]
+      [userAddress, amountInWei, resolvedNonce]
     );
     
     // Sign the message (adds EIP-191 prefix automatically)
     const signature = await wallet.signMessage(ethers.getBytes(messageHash));
     
     // Log for audit trail
-    console.log(`✅ Signed: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)} | ${tokensToMint} CLK (${clickCount} clicks) | Nonce: ${nonce}`);
+    console.log(`✅ Signed: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)} | ${tokensToMint} CLK (${clickCount} clicks) | Mint Nonce: ${resolvedNonce}`);
     
     res.json({ 
       signature,
       amount: amountInWei.toString(),
-      clkAmount: tokensToMint // For frontend display
+      clkAmount: tokensToMint, // For frontend display
+      mintNonce: resolvedNonce
     });
     
   } catch (error) {
