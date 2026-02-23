@@ -28,7 +28,8 @@ import { getAgentSkills } from './utils/gameLogic'
 import type {
   AgentClassConfig,
   LeaderboardEntry,
-  ShopItem
+  ShopItem,
+  ERC20TransferEvent
 } from './types'
 
 
@@ -179,14 +180,14 @@ function App() {
     if (code === import.meta.env.VITE_DEBUG_CODE) {
       setShowDebug(true)
       toast.success("Debug Mode Activated! 🛠️")
-      // PHASE 3: Fetch validator info when debug menu opens
+      // Fetch validator info when debug menu opens
       await fetchValidatorInfo()
     } else if (code) {
       toast.error("Invalid Code")
     }
   }
 
-  // PHASE 3: Fetch validator address and user nonce
+  // Fetch validator address and user nonce
   const fetchValidatorInfo = async () => {
     if (!signer || !userAddress) return
     try {
@@ -218,8 +219,8 @@ function App() {
   }
 
   const debugResetClicks = () => {
-    // Note: These would need to be state vars in game state hook if we want to reset them
-    toast.info("Debug: Use browser dev tools to reset game state")
+    gameStateUpdated.setDebugClicks(100)
+    toast.success("Debug: Set 100 free clicks")
   }
 
   const debugSendQuickQuest = async () => {
@@ -291,12 +292,7 @@ function App() {
       const balances: Record<string, bigint> = {}
 
       events.forEach((event) => {
-        // @ts-expect-error Ethers args
-        const from = event.args[0]
-        // @ts-expect-error Ethers args
-        const to = event.args[1]
-        // @ts-expect-error Ethers args
-        const value = event.args[2]
+        const [from, to, value] = (event as unknown as ERC20TransferEvent).args
 
         if (from !== ZeroAddress) {
           balances[from] = (balances[from] || 0n) - value
@@ -417,7 +413,6 @@ function App() {
           }}>
             <h3 style={{margin: '0 0 10px 0', color: 'red'}}>🛠️ Debug Menu</h3>
             
-            {/* PHASE 3: Validator Information */}
             <div style={{marginBottom: '10px', fontSize: '11px', color: '#aaa', borderBottom: '1px solid #555', paddingBottom: '8px'}}>
               <div style={{marginBottom: '3px'}}>
                 <strong style={{color: '#ff6b6b'}}>🔐 Validator:</strong>

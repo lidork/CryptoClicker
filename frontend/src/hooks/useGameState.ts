@@ -69,6 +69,12 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
     setUnclaimedClicks((prev) => prev + clickMultiplier)
   }, [userAddress, unclaimedClicks, clickMultiplier])
 
+  const setDebugClicks = useCallback((value: number) => {
+    const safeValue = Math.max(0, value)
+    setClickCount(safeValue)
+    setUnclaimedClicks(safeValue)
+  }, [])
+
   const handlePayout = useCallback(async () => {
     if (!signer || !userAddress) {
       toast.error("Please connect your wallet first.")
@@ -174,7 +180,8 @@ export function useGameState(signer: JsonRpcSigner | null, userAddress: string |
     passiveIncome,
     isPayoutProcessing,
     handleClick,
-    handlePayout
+    handlePayout,
+    setDebugClicks
   }
 }
 

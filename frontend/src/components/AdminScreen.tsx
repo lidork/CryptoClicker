@@ -3,7 +3,7 @@ import { JsonRpcSigner, Contract, formatEther, ZeroAddress } from 'ethers'
 import { toast } from 'react-toastify'
 import { GameItemABI, MarketplaceABI, ClickerTokenABI } from '../abis/contractABIs'
 import { GAME_ITEM_ADDRESS, MARKETPLACE_ADDRESS, CLICKER_TOKEN_ADDRESS, VALIDATOR_ADDRESS, KNOWN_ADDRESS_LABELS } from '../constants'
-import type { LeaderboardEntry } from '../types'
+import type { LeaderboardEntry, ERC20TransferEvent } from '../types'
 
 interface AdminScreenProps {
   signer: JsonRpcSigner | null
@@ -165,19 +165,13 @@ export function AdminScreen({
       const balances: Record<string, bigint> = {}
 
       events.forEach((event) => {
-        // @ts-expect-error Ethers args
-        const from = event.args[0]
-        // @ts-expect-error Ethers args
-        const to = event.args[1]
-        // @ts-expect-error Ethers args
-        const value = event.args[2]
+        const [from, to, value] = (event as unknown as ERC20TransferEvent).args
 
         if (from !== ZeroAddress) {
           balances[from] = (balances[from] || 0n) - value
         }
         balances[to] = (balances[to] || 0n) + value
       })
-
       const sortedList = Object.entries(balances)
         .map(([addr, bal]) => ({
           address: addr,

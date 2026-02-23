@@ -18,7 +18,7 @@ Crypto Clicker is a decentralized application (dApp) game that combines the addi
 
 These tokens can be spent in the in-game shop to mint unique **NFT Game Items (ERC-721)**. Each item is not just a collectible but a functional game asset that boosts gameplay stats like click multiplier or passive income generation.
 
-The project demonstrates a full-stack Web3 architecture, featuring on-chain asset ownership, history tracking for items, and interaction between a React frontend and Ethereum smart contracts.
+The project demonstrates a full-stack Web3 architecture, featuring on-chain asset ownership, on-chain history tracking (with Etherscan events), and interaction between a React frontend and Ethereum smart contracts.
 
 ## 2. Core Features
 
@@ -57,12 +57,13 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
     - **Sorcerer**: +2% click & +8% passive/level, 2 CLK/sec mining
 -   **Quest System**: Send agents on quests to earn CLK rewards and experience, level up, and unlock stat bonuses
 -   **Transferability**: Full provenance tracking—agents retain their history, stats, and quest logs when transferred between wallets
+-   **Explorer Visibility**: Transfer and quest history are emitted as events for Etherscan browsing
 -   **Anti-Cheat Validation**: Quest rewards and stat claims are cryptographically verified via ECDSA (ERC-8004 Validation Layer)
 
 ### P2P Marketplace with Full Provenance
 - **Trading**: List NFTs (items & agents) at custom prices
 - **Fees**: 10% platform fee auto-deducted from buyer
-- **History**: Full transfer history tracked on-chain with provenance data
+- **History**: Full transfer history tracked on-chain with provenance data and Etherscan events
 - **Verification**: All trades and ownership changes recorded immutably
 
 ### Owner Admin Panel
@@ -121,7 +122,7 @@ The project demonstrates a full-stack Web3 architecture, featuring on-chain asse
 ### Phase 4: Advanced Smart Contract Features
 - [x] **Staking System**: Allow users to "stake" their NFTs to earn passive `CLK` tokens without needing to keep the tab open. - added as agents
 - [x] **Marketplace**: Build a native marketplace contract where users can list items for sale for `CLK` tokens (instead of just transferring them). 
-- [x] **Owner Payout** Build the infrastructure for the owner of the contracts to get paid back in `CLK` staked/used.
+- [x] **Owner Payout**: Build the infrastructure for the owner of the contracts to get paid back in `CLK` staked/used.
 
 ## 5. Installation & Setup
 

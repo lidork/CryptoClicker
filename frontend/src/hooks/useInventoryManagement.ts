@@ -4,7 +4,17 @@ import { toast } from 'react-toastify'
 import { GameItemABI } from '../abis/contractABIs'
 import { GAME_ITEM_ADDRESS } from '../constants'
 import { JsonRpcSigner } from 'ethers'
-import type { InventoryItem, ItemHistoryRecord, ItemMetadata, AgentDetails, AgentClassConfig, AgentHistoryEvent } from '../types'
+import type { 
+  InventoryItem, 
+  ItemHistoryRecord, 
+  ItemMetadata, 
+  AgentDetails, 
+  AgentClassConfig, 
+  AgentHistoryEvent,
+  ERC721TransferEvent,
+  AgentLeveledUpEvent,
+  ExperienceGainedEvent
+} from '../types'
 
 export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress: string | null) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
@@ -42,8 +52,7 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
         
         const loadedInventory = await Promise.all(events.map(async (event) => {
           try {
-            // @ts-expect-error Ethers v6 args
-            const tokenId = event.args[2]
+            const tokenId = (event as unknown as ERC721TransferEvent).args[2]
             const owner = await gameItemContract.ownerOf(tokenId)
             
             if (owner.toLowerCase() === userAddress.toLowerCase()) {
@@ -231,8 +240,7 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
       // Parse level up events
       for (const event of levelUpEvents) {
         const block = await event.getBlock()
-        // @ts-expect-error Ethers v6 args
-        const [, newLevel, newMiningRate] = event.args
+        const [, newLevel, newMiningRate] = (event as unknown as AgentLeveledUpEvent).args
         allEvents.push({
           type: 'levelUp',
           timestamp: block.timestamp,
@@ -248,8 +256,7 @@ export function useInventoryManagement(signer: JsonRpcSigner | null, userAddress
       // Parse XP gain events
       for (const event of xpGainEvents) {
         const block = await event.getBlock()
-        // @ts-expect-error Ethers v6 args
-        const [, xpAmount, totalExperience] = event.args
+        const [, xpAmount, totalExperience] = (event as unknown as ExperienceGainedEvent).args
         allEvents.push({
           type: 'xpGain',
           timestamp: block.timestamp,

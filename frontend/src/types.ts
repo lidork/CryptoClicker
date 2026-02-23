@@ -92,3 +92,46 @@ export interface AgentHistoryEvent {
     lootRarity?: string;
   };
 }
+
+// Ethers v6 Event Type Definitions
+export type ERC20TransferEvent = {
+  args: [from: string, to: string, value: bigint]
+  blockNumber: number
+  transactionHash: string
+}
+
+export type ERC721TransferEvent = {
+  args: [from: string, to: string, tokenId: bigint]
+  blockNumber: number
+  transactionHash: string
+}
+
+export type AgentCreatedEvent = {
+  args: [tokenId: bigint, creator: string, agentClass: string, miningRate: bigint, xpVariance: bigint]
+  blockNumber: number
+  transactionHash: string
+}
+
+export type AgentLeveledUpEvent = {
+  args: [tokenId: bigint, newLevel: bigint, newMiningRate: bigint]
+  blockNumber: number
+  transactionHash: string
+}
+
+export type ExperienceGainedEvent = {
+  args: [tokenId: bigint, xpAmount: bigint, totalExperience: bigint]
+  blockNumber: number
+  transactionHash: string
+}
+
+export type AgentSentOnQuestEvent = {
+  args: [tokenId: bigint, owner: string, duration: bigint, endTime: bigint]
+  blockNumber: number
+  transactionHash: string
+}
+
+export type AgentReturnedFromQuestEvent = {
+  args: [tokenId: bigint, owner: string, xpGained: bigint, tokensEarned: bigint, lootRarity: string]
+  blockNumber: number
+  transactionHash: string
+}
