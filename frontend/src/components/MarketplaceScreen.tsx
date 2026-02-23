@@ -128,11 +128,12 @@ export function MarketplaceScreen({
       ) : (
         <button
           onClick={() => handlePurchaseItem(listing)}
-          disabled={!canAfford}
+          disabled={!canAfford || listing.seller.toLowerCase() === userAddress?.toLowerCase()}
+          title={listing.seller.toLowerCase() === userAddress?.toLowerCase() ? "You cannot buy your own listing" : ""}
           style={{
             ...styles.buyButton,
-            opacity: canAfford ? 1 : 0.5,
-            cursor: canAfford ? 'pointer' : 'not-allowed'
+            opacity: (!canAfford || listing.seller.toLowerCase() === userAddress?.toLowerCase()) ? 0.5 : 1,
+            cursor: (!canAfford || listing.seller.toLowerCase() === userAddress?.toLowerCase()) ? 'not-allowed' : 'pointer'
           }}
         >
           💰 Buy
