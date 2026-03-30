@@ -6,7 +6,6 @@
 
 Crypto Clicker is a fully functional decentralized game that merges traditional clicker mechanics with Ethereum smart contracts. Players earn **ClickerTokens (CLK)** through gameplay clicks, spend them on NFT items and agents, and participate in a deflationary economy where 90% of all purchases are burned, rewarding the game owner with 10% commission.
 
-**Status**: Final Release (Production Ready) ✅  
 **Network**: Sepolia Testnet  
 **Token Contract**: ERC-20 (ClickerToken.sol)  
 **Asset Contracts**: ERC-721 Hybrid (GameItem.sol) with ERC-8004 Lite implementation, Marketplace (Marketplace.sol)
